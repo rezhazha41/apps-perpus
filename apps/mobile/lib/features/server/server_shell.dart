@@ -12,6 +12,14 @@ import 'package:printing/printing.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+String? _bookCoverUrl(Map<String, dynamic>? book) {
+  final path = book?['cover_path'] as String?;
+  if (path == null || path.isEmpty) return null;
+  return Supabase.instance.client.storage
+      .from('book-covers')
+      .getPublicUrl(path);
+}
+
 /// Server-backed screens are selected from the role loaded by SessionRouter.
 class ServerShell extends StatefulWidget {
   const ServerShell({super.key, required this.isAdmin, required this.user});
@@ -66,13 +74,49 @@ class _ServerShellState extends State<ServerShell> {
           ];
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'perpus.',
-          style: TextStyle(
-            fontWeight: FontWeight.w900,
-            fontSize: 27,
-            letterSpacing: -1,
-          ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'perpus.',
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 27,
+                letterSpacing: -1,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Tooltip(
+              message: 'Keluar otomatis setelah 24 jam tanpa aktivitas.',
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: PerpusColors.accent.withValues(alpha: .45),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      widget.isAdmin
+                          ? Icons.admin_panel_settings_outlined
+                          : Icons.person_outline,
+                      size: 14,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      widget.isAdmin ? 'PENGURUS' : 'ANGGOTA',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: .5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
         actions: widget.isAdmin
             ? [
@@ -895,33 +939,18 @@ class _BookCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 46,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: (book['cover_path'] as String?)?.isNotEmpty == true
-                      ? Image.network(
-                          Supabase.instance.client.storage
-                              .from('book-covers')
-                              .getPublicUrl(book['cover_path'] as String),
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => Icon(
-                            Icons.menu_book_rounded,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onPrimaryContainer,
-                          ),
-                        )
-                      : Icon(
-                          Icons.menu_book_rounded,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onPrimaryContainer,
-                        ),
+                PerpusBookCover(
+                  bookId: book['id'] as String? ?? title,
+                  code: copies.isNotEmpty
+                      ? (copies.first['code'] as String? ?? 'BUKU')
+                      : 'BUKU',
+                  width: 52,
+                  height: 72,
+                  imageUrl: (book['cover_path'] as String?)?.isNotEmpty == true
+                      ? Supabase.instance.client.storage
+                            .from('book-covers')
+                            .getPublicUrl(book['cover_path'] as String)
+                      : null,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1702,7 +1731,9 @@ class _MemberQrScanPageState extends State<MemberQrScanPage> {
     try {
       final result = await Supabase.instance.client
           .from('book_copies')
-          .select('id,code,status,archived_at,books(title,author,archived_at)')
+          .select(
+            'id,code,status,archived_at,books(id,title,author,category,cover_path,archived_at)',
+          )
           .eq('code', code)
           .maybeSingle();
       if (!mounted) return;
@@ -1752,7 +1783,7 @@ class _MemberQrScanPageState extends State<MemberQrScanPage> {
       ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: AspectRatio(
-          aspectRatio: 1,
+          aspectRatio: _copy == null ? 1 : 1.6,
           child: MobileScanner(
             controller: _controller,
             onDetect: _onDetect,
@@ -1783,15 +1814,31 @@ class _MemberQrScanPageState extends State<MemberQrScanPage> {
       ],
       if (_copy case final copy?) ...[
         const SizedBox(height: 16),
+        Center(
+          child: PerpusBookCover(
+            bookId:
+                ((copy['books'] as Map<String, dynamic>?)?['id'] as String?) ??
+                copy['code'] as String,
+            code: copy['code'] as String? ?? 'BUKU',
+            width: 112,
+            height: 150,
+            imageUrl: _bookCoverUrl(copy['books'] as Map<String, dynamic>?),
+          ),
+        ),
+        const SizedBox(height: 12),
         Card(
           child: ListTile(
-            leading: const Icon(Icons.menu_book_outlined),
+            leading: Icon(
+              copy['status'] == 'available'
+                  ? Icons.check_circle_outline
+                  : Icons.info_outline,
+            ),
             title: Text(
               (copy['books'] as Map<String, dynamic>?)?['title'] as String? ??
                   'Buku',
             ),
             subtitle: Text(
-              'Kode ${copy['code']} · ${_status(copy['status'] as String? ?? '')}',
+              '${(copy['books'] as Map<String, dynamic>?)?['category'] ?? 'Buku'} · Kode ${copy['code']} · ${_status(copy['status'] as String? ?? '')}',
             ),
             trailing: Icon(
               copy['status'] == 'available'
@@ -1910,9 +1957,19 @@ class _MemberLoanRequestPageState extends State<MemberLoanRequestPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            Center(
+              child: PerpusBookCover(
+                bookId: book?['id'] as String? ?? widget.copy['code'] as String,
+                code: widget.copy['code'] as String? ?? 'BUKU',
+                width: 96,
+                height: 128,
+                imageUrl: _bookCoverUrl(book),
+              ),
+            ),
+            const SizedBox(height: 12),
             Card(
               child: ListTile(
-                leading: const Icon(Icons.menu_book_outlined),
+                leading: const Icon(Icons.qr_code_2),
                 title: Text(book?['title'] as String? ?? 'Buku'),
                 subtitle: Text('Eksemplar ${widget.copy['code']}'),
               ),
@@ -3190,7 +3247,7 @@ class _MemberLoansPageState extends State<MemberLoansPage> {
         await Supabase.instance.client
             .from('loans')
             .select(
-              'id,approved_at,loan_items(id,due_at,returned_at,resolved_at,return_condition,return_request_id,book_copies(code,books(title)),return_requests(id,status),loss_reports(id,status,description))',
+              'id,approved_at,loan_items(id,due_at,returned_at,resolved_at,return_condition,return_request_id,book_copies(code,books(id,title,category,cover_path)),return_requests(id,status),loss_reports(id,status,description))',
             )
             .order('approved_at', ascending: false),
       );
@@ -3267,18 +3324,19 @@ class _MemberLoansPageState extends State<MemberLoansPage> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             ListTile(
-                              leading: Icon(
-                                returned
-                                    ? Icons.check_circle_outline
-                                    : resolved
-                                    ? Icons.done_all
-                                    : overdue
-                                    ? Icons.warning_amber
-                                    : Icons.menu_book_outlined,
+                              leading: PerpusBookCover(
+                                bookId:
+                                    book?['id'] as String? ??
+                                    copy?['code'] as String? ??
+                                    'book',
+                                code: copy?['code'] as String? ?? 'BUKU',
+                                width: 42,
+                                height: 58,
+                                imageUrl: _bookCoverUrl(book),
                               ),
                               title: Text(book?['title'] as String? ?? 'Buku'),
                               subtitle: Text(
-                                'Kode ${copy?['code'] ?? '—'} · Jatuh tempo ${_date(item['due_at'])}',
+                                '${book?['category'] ?? 'Buku'} · QR ${copy?['code'] ?? '—'} · Jatuh tempo ${_date(item['due_at'])}',
                               ),
                               trailing: Text(
                                 returned
@@ -3427,7 +3485,7 @@ class _AdminCirculationPageState extends State<AdminCirculationPage> {
       await client
           .from('loan_requests')
           .select(
-            'id,member_id,status,created_at,decision_reason,loan_request_items(copy_id,book_copies(code,books(title))),transaction_evidence(method,object_path)',
+            'id,member_id,status,created_at,decision_reason,loan_request_items(copy_id,book_copies(code,books(id,title,cover_path))),transaction_evidence(method,object_path)',
           )
           .eq('status', 'pending')
           .order('created_at'),
@@ -3564,7 +3622,7 @@ class _AdminClassLoansPageState extends State<_AdminClassLoansPage> {
         await Supabase.instance.client
             .from('class_loan_sessions')
             .select(
-              'id,responsible_name,class_name,activity,due_at,returned_at,created_at,class_loan_items(id,returned_at,return_condition,book_copies(code,books(title)))',
+              'id,responsible_name,class_name,activity,due_at,returned_at,created_at,class_loan_items(id,returned_at,return_condition,book_copies(code,books(id,title,cover_path)))',
             )
             .order('created_at', ascending: false)
             .limit(100),
@@ -3668,10 +3726,15 @@ class _ClassLoanSessionCard extends StatelessWidget {
                   return ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
-                    leading: Icon(
-                      returned
-                          ? Icons.check_circle_outline
-                          : Icons.menu_book_outlined,
+                    leading: PerpusBookCover(
+                      bookId:
+                          book?['id'] as String? ??
+                          copy?['code'] as String? ??
+                          'book',
+                      code: copy?['code'] as String? ?? 'BUKU',
+                      width: 40,
+                      height: 56,
+                      imageUrl: _bookCoverUrl(book),
                     ),
                     title: Text(book?['title'] as String? ?? 'Buku'),
                     subtitle: Text('QR ${copy?['code'] ?? '—'}'),
@@ -3767,7 +3830,9 @@ class _ClassLoanCreatePageState extends State<_ClassLoanCreatePage> {
     try {
       final copy = await Supabase.instance.client
           .from('book_copies')
-          .select('id,code,status,archived_at,books(title,archived_at)')
+          .select(
+            'id,code,status,archived_at,books(id,title,cover_path,archived_at)',
+          )
           .eq('code', code)
           .maybeSingle();
       if (!mounted) return;
@@ -3924,7 +3989,17 @@ class _ClassLoanCreatePageState extends State<_ClassLoanCreatePage> {
           for (final copy in _copies)
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.check_circle_outline),
+              leading: PerpusBookCover(
+                bookId:
+                    (copy['books'] as Map<String, dynamic>?)?['id']
+                        as String? ??
+                    copy['code'] as String? ??
+                    'book',
+                code: copy['code'] as String? ?? 'BUKU',
+                width: 38,
+                height: 52,
+                imageUrl: _bookCoverUrl(copy['books'] as Map<String, dynamic>?),
+              ),
               title: Text(
                 (copy['books'] as Map<String, dynamic>?)?['title'] as String? ??
                     'Buku',
@@ -3984,7 +4059,7 @@ class _MemberLoanRequestsPanelState extends State<_MemberLoanRequestsPanel> {
         await Supabase.instance.client
             .from('loan_requests')
             .select(
-              'id,status,created_at,decision_reason,loan_request_items(book_copies(code,books(title)))',
+              'id,status,created_at,decision_reason,loan_request_items(book_copies(code,books(id,title,cover_path)))',
             )
             .order('created_at', ascending: false)
             .limit(20),
@@ -4030,8 +4105,21 @@ class _MemberLoanRequestsPanelState extends State<_MemberLoanRequestsPanel> {
                           final copy =
                               item['book_copies'] as Map<String, dynamic>?;
                           final book = copy?['books'] as Map<String, dynamic>?;
-                          return Text(
-                            '${book?['title'] ?? 'Buku'} · ${copy?['code'] ?? '—'}',
+                          return ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: PerpusBookCover(
+                              bookId:
+                                  book?['id'] as String? ??
+                                  copy?['code'] as String? ??
+                                  'book',
+                              code: copy?['code'] as String? ?? 'BUKU',
+                              width: 38,
+                              height: 52,
+                              imageUrl: _bookCoverUrl(book),
+                            ),
+                            title: Text(book?['title'] as String? ?? 'Buku'),
+                            subtitle: Text('QR ${copy?['code'] ?? '—'}'),
                           );
                         },
                       ),
@@ -4644,12 +4732,26 @@ class _BookDialogState extends State<_BookDialog> {
                                     widget.initial!['cover_path'] as String,
                                   ),
                               fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) =>
-                                  const Icon(Icons.menu_book_outlined),
+                              errorBuilder: (_, _, _) => PerpusBookCover(
+                                bookId:
+                                    widget.initial?['id'] as String? ??
+                                    'existing-book',
+                                code: _title.text.isEmpty
+                                    ? 'BUKU'
+                                    : _title.text.trim().toUpperCase(),
+                                width: 52,
+                                height: 64,
+                              ),
                             )
-                          : const ColoredBox(
-                              color: Color(0xFFE8EAF0),
-                              child: Icon(Icons.menu_book_outlined),
+                          : PerpusBookCover(
+                              bookId:
+                                  widget.initial?['id'] as String? ??
+                                  'new-book',
+                              code: _title.text.isEmpty
+                                  ? 'BUKU'
+                                  : _title.text.trim().toUpperCase(),
+                              width: 52,
+                              height: 64,
                             ),
                     ),
                   ),

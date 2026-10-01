@@ -2,6 +2,36 @@
 
 Catatan ini diperbarui pada setiap sesi yang mengubah implementasi atau keputusan produk agar mudah dirujuk saat demo dan presentasi akhir.
 
+## 1 Oktober 2026 — Status sesi aktif dan konsistensi sampul buku
+
+### Perubahan
+
+- Menegaskan aturan sesi yang sudah ada: anggota maupun pengurus otomatis logout setelah 24 jam tanpa aktivitas; waktu saat aplikasi tertutup tetap dihitung.
+- Menampilkan badge peran **ANGGOTA/PENGURUS** di header server, dengan keterangan batas idle pada tooltip, sehingga tampilan setelah login jelas berbeda dari halaman awal.
+- Membuat widget `PerpusBookCover` bersama untuk demo dan data server. Sampul tanpa gambar kini memakai artwork tipografi demo, dan gambar gagal dimuat kembali ke artwork yang sama.
+
+### Verifikasi
+
+- `flutter analyze`: PASS tanpa temuan.
+- Build APK debug: PASS; terpasang pada perangkat itel A665L yang tersambung.
+- Tidak ada perubahan backend atau data server.
+
+## 1 Oktober 2026 — Sampul buku pada hasil scan dan pinjaman
+
+### Perubahan
+
+- Mengacu pada screenshot `Capture.PNG`, setelah scan berhasil preview kamera dipendekkan dan artwork sampul ditampilkan besar di tengah, tepat di atas kartu judul, kategori, kode QR, dan status.
+- Hasil scan dan halaman pengajuan menampilkan gambar sampul pilihan pengurus, atau artwork tipografi demo bila gambar kosong/gagal dimuat.
+- Sampul ikut ditampilkan pada pinjaman anggota, antrean pengajuan pengurus, daftar pilihan sesi pembelajaran, dan catatan sesi kelas.
+- Form tambah/ubah buku tetap menyediakan pilihan **Logo / sampul buku**; pratinjau kosong kini menggunakan artwork demo yang sama.
+
+### Verifikasi
+
+- `flutter analyze`: PASS tanpa temuan.
+- Build APK debug: PASS.
+- APK terpasang pada perangkat itel A665L (`108071544J008323`).
+- Integrasi runtime scan dengan data server perlu dicoba di perangkat setelah login; tidak ada perubahan atau penulisan data server.
+
 ## 1 Oktober 2026 — Claim siswa dan pemulihan akses akun
 
 ### Keputusan produk

@@ -38,6 +38,8 @@ Tujuan utama:
 
 Login menggunakan email dan kata sandi. NIS/NISN hanya memvalidasi kelayakan pendaftaran. Pemulihan normal memakai tautan email Supabase Auth. Jika siswa tidak dapat mengakses email, pengurus dapat memverifikasi identitas secara langsung lalu memberikan kode pemulihan sekali pakai yang kedaluwarsa dalam 15 menit; kode mentah tidak disimpan di database.
 
+Setelah login, header menampilkan peran **ANGGOTA** atau **PENGURUS** agar sesi aktif mudah dibedakan dari halaman masuk. Sesi anggota dan pengurus otomatis berakhir setelah 24 jam tanpa aktivitas, termasuk saat aplikasi tertutup; sentuhan atau tindakan baru memperbarui waktu aktivitas.
+
 Referensi teknologi:
 
 - [Flutter](https://flutter.dev/development)
@@ -51,7 +53,7 @@ Referensi teknologi:
 | --- | --- |
 | Mendaftar menggunakan NIS atau NISN terdaftar | Menambahkan daftar siswa yang boleh mendaftar |
 | Melihat katalog dan ketersediaan | Mengelola judul dan eksemplar buku |
-| Scan QR untuk pengajuan peminjaman | Membuat QR setiap eksemplar |
+| Scan QR untuk pengajuan peminjaman dan melihat sampul, judul, kategori, serta kode QR buku | Membuat QR setiap eksemplar |
 | Memilih selfie atau kartu OSIS sebagai bukti | Memeriksa bukti dan menyetujui peminjaman |
 | Melihat jumlah dan daftar buku pinjaman | Melihat pinjaman setiap siswa |
 | Mengajukan pengembalian | Scan dan memvalidasi buku yang diterima |

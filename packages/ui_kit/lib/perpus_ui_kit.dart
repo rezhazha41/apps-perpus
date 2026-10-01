@@ -168,3 +168,79 @@ class EmptyState extends StatelessWidget {
     ),
   );
 }
+
+/// Keeps the no-image cover artwork consistent between demo and server data.
+class PerpusBookCover extends StatelessWidget {
+  const PerpusBookCover({
+    super.key,
+    required this.bookId,
+    required this.code,
+    this.width = 62,
+    this.height = 86,
+    this.imageUrl,
+  });
+
+  final String bookId;
+  final String code;
+  final double width;
+  final double height;
+  final String? imageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final image = imageUrl;
+    if (image != null && image.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Image.network(
+          image,
+          width: width,
+          height: height,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => _artwork(),
+        ),
+      );
+    }
+    return _artwork();
+  }
+
+  Widget _artwork() => Container(
+    width: width,
+    height: height,
+    padding: const EdgeInsets.all(8),
+    decoration: BoxDecoration(
+      color: bookId.hashCode.isEven ? PerpusColors.primary : PerpusColors.ink,
+      borderRadius: BorderRadius.circular(6),
+      border: const Border(
+        left: BorderSide(color: PerpusColors.accent, width: 5),
+      ),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Icon(
+          Icons.auto_stories_outlined,
+          color: PerpusColors.accent,
+          size: 16,
+        ),
+        Expanded(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              code,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: width > 80 ? 32 : 20,
+                color: PerpusColors.surface,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
+        Container(height: 2, width: 24, color: PerpusColors.accent),
+      ],
+    ),
+  );
+}

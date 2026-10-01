@@ -18,7 +18,8 @@ Dokumen ini merangkum kondisi aplikasi untuk persiapan demo dan presentasi. Cata
 - **M2 — Identitas dan katalog:** login/daftar anggota dengan NIS/NISN yang terdaftar, persetujuan aktivasi pengurus, pengelolaan anggota, CRUD buku, pengelolaan eksemplar, penyesuaian stok, dan arsip katalog lunak.
 - **Claim anggota:** database membatasi satu akun menunggu/aktif per siswa. Penolakan melepas claim; anggota dapat memperbaiki dan mengajukan ulang menggunakan akun yang sama.
 - **Pemulihan akses terbantu:** anggota yang tidak dapat membuka email dapat meminta pengurus memeriksa identitas fisik. Pengurus menerbitkan kode sekali pakai 15 menit; siswa memasukkan kode dan kata sandi baru tanpa endpoint pencarian identitas publik.
-- **QR buku:** setiap eksemplar punya kode unik. Kode otomatis mengikuti kategori/judul; saat menambahkan buku pengurus dapat memberi awalan QR khusus. QR dapat ditampilkan dan dicetak satuan. Anggota dapat memindai QR dari aplikasi.
+- **Sesi login:** sesi anggota dan pengurus logout otomatis setelah 24 jam tanpa aktivitas. Waktu tidak aktif saat aplikasi tertutup tetap dihitung. Header server menunjukkan peran aktif.
+- **QR buku:** setiap eksemplar punya kode unik. Kode otomatis mengikuti kategori/judul; saat menambahkan buku pengurus dapat memberi awalan QR khusus. QR dapat ditampilkan dan dicetak satuan. Setelah scan, anggota melihat sampul besar, judul, kategori, kode, dan status; sampul ikut tampil pada pengajuan serta riwayat pinjaman.
 - **Sampul katalog:** pengurus dapat memilih gambar sampul saat menambah atau mengubah buku. Jika tidak memilih gambar, katalog mempertahankan ikon bawaan demo.
 - **M3 — Peminjaman anggota:** pengajuan dengan bukti foto, persetujuan pengurus, riwayat pinjaman, permintaan pengembalian, dan pelaporan kehilangan. Aturan akses dan perubahan stok dijaga oleh Supabase.
 - **Pengembalian pengurus:** pengurus dapat meninjau pengembalian per eksemplar serta mencatat kondisi baik/rusak.

@@ -398,45 +398,13 @@ class _DemoShellState extends State<DemoShell> {
       ),
     ],
   );
-  Widget cover(Book book, {double width = 62, double height = 86}) => Container(
-    width: width,
-    height: height,
-    padding: const EdgeInsets.all(8),
-    decoration: BoxDecoration(
-      color: book.id.hashCode.isEven ? PerpusColors.primary : PerpusColors.ink,
-      borderRadius: BorderRadius.circular(6),
-      border: const Border(
-        left: BorderSide(color: PerpusColors.accent, width: 5),
-      ),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        const Icon(
-          Icons.auto_stories_outlined,
-          color: PerpusColors.accent,
-          size: 16,
-        ),
-        Expanded(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              book.code,
-              maxLines: 1,
-              style: TextStyle(
-                fontSize: width > 80 ? 32 : 20,
-                color: PerpusColors.surface,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ),
-        Container(height: 2, width: 24, color: PerpusColors.accent),
-      ],
-    ),
-  );
+  Widget cover(Book book, {double width = 62, double height = 86}) =>
+      PerpusBookCover(
+        bookId: book.id,
+        code: book.code,
+        width: width,
+        height: height,
+      );
   Widget bookTile(Book book) => Padding(
     padding: const EdgeInsets.only(bottom: 12),
     child: Material(
