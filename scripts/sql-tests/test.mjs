@@ -58,6 +58,8 @@ try {
   await db.exec(classroomLoans);
   const inventoryLockProtocol = await readFile(new URL('../../supabase/migrations/202609300003_inventory_lock_protocol.sql', import.meta.url), 'utf8');
   await db.exec(inventoryLockProtocol);
+  const memberClaimRecovery = await readFile(new URL('../../supabase/migrations/202610010001_member_claim_recovery.sql', import.meta.url), 'utf8');
+  await db.exec(memberClaimRecovery);
   const verification = await readFile(new URL('../../supabase/verify_migration.sql', import.meta.url), 'utf8');
   await db.exec(verification);
   const staffVerification = await readFile(new URL('../../supabase/verify_staff_admin.sql', import.meta.url), 'utf8');
@@ -66,6 +68,8 @@ try {
   await db.exec(tests.replace(/^\\set.*$/gm, ''));
   const transactionTests = await readFile(new URL('../../supabase/tests/transactions.sql', import.meta.url), 'utf8');
   await db.exec(transactionTests);
+  const claimRecoveryTests = await readFile(new URL('../../supabase/tests/member_claim_recovery.sql', import.meta.url), 'utf8');
+  await db.exec(claimRecoveryTests);
   console.log('PASS: identity/inventory + transaction + staff/admin + invitation + operator-provisioned Auth + archive + covers + classroom + inventory-lock migrations; archive behavior, class loan idempotency/partial/full return, request idempotency, approval, loss resolution, RLS isolation and evidence/cover-object access.');
   console.log('GoTrue transport, real Storage API, email delivery and multi-connection concurrency still require Supabase integration tests.');
 } catch (error) {

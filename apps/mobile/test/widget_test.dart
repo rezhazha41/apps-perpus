@@ -73,6 +73,61 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('member login offers assisted recovery without email access', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: perpusTheme(),
+        home: const AuthPage(expectedRole: 'member'),
+      ),
+    );
+
+    expect(find.text('Tidak bisa mengakses email?'), findsOneWidget);
+    await tester.tap(find.text('Tidak bisa mengakses email?'));
+    await tester.pumpAndSettle();
+    expect(find.text('Pulihkan akses anggota'), findsOneWidget);
+    expect(find.text('ID pemulihan'), findsOneWidget);
+    expect(find.text('Kode dari pengurus'), findsOneWidget);
+  });
+
+  testWidgets('assisted recovery validates and submits a one-time code', (
+    tester,
+  ) async {
+    Map<String, String>? submitted;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: perpusTheme(),
+        home: AccountAccessRecoveryPage(
+          redeem: ({
+            required challengeId,
+            required code,
+            required password,
+          }) async {
+            submitted = {
+              'challengeId': challengeId,
+              'code': code,
+              'password': password,
+            };
+          },
+        ),
+      ),
+    );
+
+    final fields = find.byType(TextFormField);
+    await tester.enterText(fields.at(0), 'challenge-123');
+    await tester.enterText(fields.at(1), 'ABCD-EFGH-IJKL');
+    await tester.enterText(fields.at(2), 'kata-sandi-baru');
+    await tester.enterText(fields.at(3), 'kata-sandi-baru');
+    await tester.tap(find.text('Pulihkan akun'));
+    await tester.pumpAndSettle();
+
+    expect(submitted?['challengeId'], 'challenge-123');
+    expect(submitted?['code'], 'ABCDEFGHIJKL');
+    expect(submitted?['password'], 'kata-sandi-baru');
+    expect(find.text('Akses akun berhasil dipulihkan.'), findsOneWidget);
+  });
+
   testWidgets('admin login offers invite-only staff activation', (
     tester,
   ) async {
