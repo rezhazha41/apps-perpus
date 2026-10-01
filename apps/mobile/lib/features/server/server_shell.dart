@@ -2153,6 +2153,15 @@ class _MembersPageState extends State<MembersPage> {
       }
       final data = snapshot.data!;
       final studentById = {for (final row in data.students) row['id']: row};
+      final accountByStudentId = <dynamic, Map<String, dynamic>>{};
+      for (final profile in data.profiles) {
+        final studentId = profile['claimed_student_id'];
+        if (studentId != null &&
+            (!accountByStudentId.containsKey(studentId) ||
+                profile['status'] == 'active')) {
+          accountByStudentId[studentId] = profile;
+        }
+      }
       final studentsByClass = <String, List<Map<String, dynamic>>>{};
       for (final student in data.students) {
         final className = (student['class_name'] as String?)?.trim();
@@ -2230,6 +2239,14 @@ class _MembersPageState extends State<MembersPage> {
                               onEdit: () => _editStudent(context, student),
                               onToggleActive: () =>
                                   _setStudentActive(context, student),
+                              onRecover:
+                                  accountByStudentId[student['id']] == null
+                                  ? null
+                                  : () => _recoverAccess(
+                                      context,
+                                      student,
+                                      accountByStudentId[student['id']]!,
+                                    ),
                             ),
                         ],
                       ),
@@ -2326,6 +2343,58 @@ class _MembersPageState extends State<MembersPage> {
       if (context.mounted) {
         _snack(context, active ? 'Siswa dinonaktifkan.' : 'Siswa diaktifkan.');
       }
+    } catch (error) {
+      if (context.mounted) _snack(context, _friendlyError(error));
+    }
+  }
+
+  Future<void> _recoverAccess(
+    BuildContext context,
+    Map<String, dynamic> student,
+    Map<String, dynamic> profile,
+  ) async {
+    final input = await showDialog<_RecoveryIssueInput>(
+      context: context,
+      builder: (_) => _RecoveryIssueDialog(
+        studentName: student['full_name'] as String? ?? 'Anggota',
+      ),
+    );
+    if (input == null || !context.mounted) return;
+    try {
+      final response = await Supabase.instance.client.functions.invoke(
+        'account-recovery',
+        body: {
+          'action': 'issue',
+          'target_user_id': profile['id'],
+          if (input.newEmail.isNotEmpty) 'new_email': input.newEmail,
+        },
+      );
+      final data = response.data;
+      if (data is! Map ||
+          data['challenge_id'] is! String ||
+          data['code'] is! String) {
+        throw const FormatException('Respons kode pemulihan tidak lengkap.');
+      }
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Kode pemulihan siap'),
+          content: SelectableText(
+            'Nama: ${student['full_name']}\n\n'
+            'ID pemulihan:\n${data['challenge_id']}\n\n'
+            'Kode:\n${data['code']}\n\n'
+            'Kode berlaku 15 menit dan hanya dapat digunakan sekali. Berikan langsung kepada siswa setelah identitas diperiksa. Setelah dialog ditutup kode tidak dapat dilihat lagi.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Saya sudah mencatat'),
+            ),
+          ],
+        ),
+      );
     } catch (error) {
       if (context.mounted) _snack(context, _friendlyError(error));
     }
@@ -2932,10 +3001,12 @@ class _StudentCard extends StatelessWidget {
     required this.student,
     required this.onEdit,
     required this.onToggleActive,
+    this.onRecover,
   });
   final Map<String, dynamic> student;
   final VoidCallback onEdit;
   final VoidCallback onToggleActive;
+  final VoidCallback? onRecover;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -2955,6 +3026,7 @@ class _StudentCard extends StatelessWidget {
         onSelected: (value) {
           if (value == 'edit') onEdit();
           if (value == 'active') onToggleActive();
+          if (value == 'recover') onRecover?.call();
         },
         itemBuilder: (context) => [
           const PopupMenuItem(
@@ -2979,10 +3051,97 @@ class _StudentCard extends StatelessWidget {
               contentPadding: EdgeInsets.zero,
             ),
           ),
+          if (onRecover != null)
+            const PopupMenuItem(
+              value: 'recover',
+              child: ListTile(
+                leading: Icon(Icons.lock_reset_outlined),
+                title: Text('Pulihkan akses akun'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
         ],
       ),
       onTap: onEdit,
     ),
+  );
+}
+
+class _RecoveryIssueInput {
+  const _RecoveryIssueInput(this.newEmail);
+  final String newEmail;
+}
+
+class _RecoveryIssueDialog extends StatefulWidget {
+  const _RecoveryIssueDialog({required this.studentName});
+  final String studentName;
+
+  @override
+  State<_RecoveryIssueDialog> createState() => _RecoveryIssueDialogState();
+}
+
+class _RecoveryIssueDialogState extends State<_RecoveryIssueDialog> {
+  final _email = TextEditingController();
+  bool _identityChecked = false;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Pulihkan akses anggota'),
+    content: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(widget.studentName),
+          const SizedBox(height: 12),
+          const Text(
+            'Pastikan siswa menunjukkan kartu pelajar atau identitas sekolah sebelum kode dibuat.',
+          ),
+          CheckboxListTile(
+            value: _identityChecked,
+            contentPadding: EdgeInsets.zero,
+            onChanged: (value) =>
+                setState(() => _identityChecked = value ?? false),
+            title: const Text('Identitas siswa sudah diperiksa'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _email,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(
+              labelText: 'Email baru (opsional)',
+              helperText: 'Kosongkan jika email akun masih digunakan.',
+            ),
+          ),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Batal'),
+      ),
+      FilledButton(
+        onPressed: _identityChecked
+            ? () {
+                final email = _email.text.trim().toLowerCase();
+                if (email.isNotEmpty &&
+                    (!email.contains('@') || !email.contains('.'))) {
+                  _snack(context, 'Periksa format email baru.');
+                  return;
+                }
+                Navigator.pop(context, _RecoveryIssueInput(email));
+              }
+            : null,
+        child: const Text('Buat kode'),
+      ),
+    ],
   );
 }
 

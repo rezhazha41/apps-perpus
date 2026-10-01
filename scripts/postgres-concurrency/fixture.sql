@@ -2,7 +2,8 @@
 insert into public.student_registry(id,nis,full_name,class_name) values
  ('10000000-0000-4000-8000-000000000011','981101','Admin Test','Staff'),
  ('10000000-0000-4000-8000-000000000012','981102','Member A','X'),
- ('10000000-0000-4000-8000-000000000013','981103','Member B','XI');
+ ('10000000-0000-4000-8000-000000000013','981103','Member B','XI'),
+ ('10000000-0000-4000-8000-000000000014','981104','Claim Race','XII');
 insert into auth.users(id,email,raw_user_meta_data,email_confirmed_at) values
  ('20000000-0000-4000-8000-000000000011','admin-test@fixture.invalid','{}',now()),
  ('20000000-0000-4000-8000-000000000012','member-a@fixture.invalid',

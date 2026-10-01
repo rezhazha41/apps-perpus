@@ -8,7 +8,7 @@ begin
     'book_copies','library_settings','audit_logs','loan_requests',
     'loan_request_items','transaction_evidence','loans','loan_items',
     'return_requests','return_request_items','loss_reports',
-    'class_loan_sessions','class_loan_items'] loop
+    'class_loan_sessions','class_loan_items','account_recovery_challenges'] loop
     table_id := to_regclass('public.' || table_name);
     if table_id is null then raise exception 'Missing table: %', table_name; end if;
     if not (select relrowsecurity from pg_class where oid = table_id) then
@@ -61,6 +61,34 @@ begin
   if has_function_privilege('anon','public.review_member(uuid,boolean,text)','EXECUTE') then
     raise exception 'Anonymous role can call member review';
   end if;
+  if to_regprocedure('public.resubmit_member_application()') is null or
+     not has_function_privilege('authenticated','public.resubmit_member_application()','EXECUTE') or
+     has_function_privilege('anon','public.resubmit_member_application()','EXECUTE') then
+    raise exception 'Member resubmission RPC missing or grants invalid';
+  end if;
+  if not exists(select 1 from pg_indexes where schemaname='public'
+      and indexname='profiles_one_open_member_claim'
+      and indexdef ilike '%status%pending%active%') then
+    raise exception 'Exclusive pending/active member claim index missing';
+  end if;
+  if has_table_privilege('authenticated','public.account_recovery_challenges','SELECT') or
+     has_table_privilege('authenticated','public.account_recovery_challenges','INSERT') or
+     has_table_privilege('anon','public.account_recovery_challenges','SELECT') then
+    raise exception 'Recovery challenge table exposed to clients';
+  end if;
+  if to_regprocedure('public.issue_account_recovery_challenge(uuid,uuid,text,text)') is null or
+     to_regprocedure('public.consume_account_recovery_challenge(uuid,text)') is null or
+     to_regprocedure('public.revoke_member_sessions(uuid)') is null then
+    raise exception 'Trusted recovery RPC missing';
+  end if;
+  if has_function_privilege('authenticated',
+       'public.issue_account_recovery_challenge(uuid,uuid,text,text)','EXECUTE') or
+     has_function_privilege('authenticated',
+       'public.consume_account_recovery_challenge(uuid,text)','EXECUTE') or
+     has_function_privilege('anon',
+       'public.consume_account_recovery_challenge(uuid,text)','EXECUTE') then
+    raise exception 'Trusted recovery RPC exposed to a client role';
+  end if;
   if to_regprocedure('public.submit_loan_request(uuid,uuid[],text,text)') is null or
      to_regprocedure('public.review_loan_request(uuid,boolean,text)') is null or
      to_regprocedure('public.review_return_item(uuid,boolean,text,text)') is null or
@@ -111,7 +139,7 @@ begin
   end if;
 end $$;
 
-select 'PASS: identity, inventory, archive/stock, transactions, classroom loans, Storage, RLS and RPC grants' as result;
+select 'PASS: identity/claim/recovery, inventory, archive/stock, transactions, classroom loans, Storage, RLS and RPC grants' as result;
 select c.relname as table_name, c.relrowsecurity as rls_enabled,
   (select count(*) from pg_policy p where p.polrelid = c.oid) as policy_count
 from pg_class c join pg_namespace n on n.oid=c.relnamespace
@@ -119,4 +147,4 @@ where n.nspname='public' and c.relname in ('student_registry','profiles','books'
   'book_copies','library_settings','audit_logs','loan_requests',
   'loan_request_items','transaction_evidence','loans','loan_items',
   'return_requests','return_request_items','loss_reports','class_loan_sessions',
-  'class_loan_items') order by c.relname;
+  'class_loan_items','account_recovery_challenges') order by c.relname;

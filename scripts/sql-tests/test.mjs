@@ -8,6 +8,7 @@ try {
   await db.exec(`
     create role anon nologin;
     create role authenticated nologin;
+    create role service_role nologin bypassrls;
     create schema auth;
     create schema storage;
     create table auth.users (
@@ -70,7 +71,7 @@ try {
   await db.exec(transactionTests);
   const claimRecoveryTests = await readFile(new URL('../../supabase/tests/member_claim_recovery.sql', import.meta.url), 'utf8');
   await db.exec(claimRecoveryTests);
-  console.log('PASS: identity/inventory + transaction + staff/admin + invitation + operator-provisioned Auth + archive + covers + classroom + inventory-lock migrations; archive behavior, class loan idempotency/partial/full return, request idempotency, approval, loss resolution, RLS isolation and evidence/cover-object access.');
+  console.log('PASS: identity/claim/recovery + transaction + staff/admin + invitation + operator-provisioned Auth + archive + covers + classroom + inventory-lock migrations; exclusive pending claim, rejection release, same-account resubmission, one-time recovery codes, archive behavior, class loan idempotency/partial/full return, request idempotency, approval, loss resolution, RLS isolation and evidence/cover-object access.');
   console.log('GoTrue transport, real Storage API, email delivery and multi-connection concurrency still require Supabase integration tests.');
 } catch (error) {
   console.error(`FAIL: SQLSTATE ${error.code ?? 'unknown'}: ${error.message}`);

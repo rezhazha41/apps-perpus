@@ -15,7 +15,7 @@ do $$ begin
       '{"account_kind":"member","identity_kind":"nis","identity_number":"771001"}',now());
     raise exception 'Second pending claim accepted';
   exception when raise_exception then
-    if sqlerrm <> 'Pendaftaran tidak dapat diproses. Identitas sedang memiliki pengajuan.' then raise; end if;
+    if sqlerrm <> 'Pendaftaran tidak dapat diproses. Hubungi admin perpustakaan.' then raise; end if;
   end;
 end $$;
 
@@ -77,28 +77,32 @@ end $$;
 reset role;
 
 set local role service_role;
-select * from public.issue_account_recovery_challenge(
- '92000000-0000-4000-8000-000000000009',
- '92000000-0000-4000-8000-000000000001',
- repeat('a',64),
- 'new-mail@example.invalid'
-) \gset recovery_
-do $$ begin
-  if :'recovery_id' is null or :'recovery_expires_at' is null then
+do $$
+declare
+  challenge record;
+  consumed record;
+  reused record;
+begin
+  select * into challenge from public.issue_account_recovery_challenge(
+    '92000000-0000-4000-8000-000000000009',
+    '92000000-0000-4000-8000-000000000001',
+    repeat('a',64),
+    'new-mail@example.invalid'
+  );
+  if challenge.challenge_id is null or challenge.expires_at is null then
     raise exception 'Recovery challenge was not issued';
   end if;
-end $$;
-select * from public.consume_account_recovery_challenge(:'recovery_id',repeat('b',64));
-select * from public.consume_account_recovery_challenge(:'recovery_id',repeat('a',64)) \gset consumed_
-do $$ begin
-  if :'consumed_success' <> 't' or :'consumed_user_id' <> '92000000-0000-4000-8000-000000000001' then
+  perform * from public.consume_account_recovery_challenge(challenge.challenge_id,repeat('b',64));
+  select * into consumed from public.consume_account_recovery_challenge(
+    challenge.challenge_id,repeat('a',64));
+  if not consumed.success or consumed.user_id<>'92000000-0000-4000-8000-000000000001' then
     raise exception 'Valid recovery challenge was not consumed';
   end if;
-end $$;
-select * from public.consume_account_recovery_challenge(:'recovery_id',repeat('a',64)) \gset reused_
-do $$ begin
-  if :'reused_success' <> 'f' then raise exception 'Recovery challenge reused'; end if;
-end $$;
+  select * into reused from public.consume_account_recovery_challenge(
+    challenge.challenge_id,repeat('a',64));
+  if reused.success then raise exception 'Recovery challenge reused'; end if;
+end;
+$$;
 reset role;
 
 rollback;

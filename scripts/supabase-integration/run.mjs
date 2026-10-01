@@ -47,10 +47,10 @@ async function signUpMember(email, identityKind, identityNumber) {
   return response.data.user;
 }
 
-async function login(email) {
+async function login(email, loginPassword = password) {
   const response = await apiRequest(config, '/auth/v1/token?grant_type=password', {
     method: 'POST',
-    body: { email, password },
+    body: { email, password: loginPassword },
   });
   assert.ok(response.data.access_token, `Login failed for ${email}.`);
   return response.data.access_token;
@@ -74,6 +74,14 @@ async function main() {
   });
   assert.notEqual(preflight.status, 404, 'Migration 202609300003_inventory_lock_protocol.sql is missing.');
   log('inventory-lock migration preflight', 'PASS');
+  const claimPreflight = await apiRequest(config, '/rest/v1/rpc/resubmit_member_application', {
+    service: true,
+    method: 'POST',
+    body: {},
+    allowStatus: [400, 404],
+  });
+  assert.notEqual(claimPreflight.status, 404, 'Migration 202610010001_member_claim_recovery.sql is missing.');
+  log('member-claim migration preflight', 'PASS');
 
   const invalidSignup = await apiRequest(config, '/auth/v1/signup', {
     method: 'POST',
@@ -90,6 +98,7 @@ async function main() {
   const adminEmail = `admin-${runId}@example.invalid`;
   const memberAEmail = `member-a-${runId}@example.invalid`;
   const memberBEmail = `member-b-${runId}@example.invalid`;
+  const claimEmailA = `claim-a-${runId}@example.invalid`;
   const adminUser = await createAuthUser(adminEmail);
   const staff = await restInsert(config, 'staff_registry', {
     staff_no: `TEST-${runId}`,
@@ -122,9 +131,52 @@ async function main() {
     class_name: 'X UJI B',
     active: true,
   }, { service: true });
+  const nisClaim = `83${String(Date.now()).slice(-8)}3`;
+  await restInsert(config, 'student_registry', {
+    nis: nisClaim,
+    full_name: 'Anggota Uji Claim',
+    class_name: 'X UJI CLAIM',
+    active: true,
+  }, { service: true });
   const memberA = await signUpMember(memberAEmail, 'nis', nisA);
   const memberB = await signUpMember(memberBEmail, 'nis', nisB);
+  const claimMember = await signUpMember(claimEmailA, 'nis', nisClaim);
   const adminToken = await login(adminEmail);
+
+  const duplicatePending = await apiRequest(config, '/auth/v1/signup', {
+    method: 'POST',
+    body: {
+      email: `claim-b-${runId}@example.invalid`,
+      password,
+      data: { account_kind: 'member', identity_kind: 'nis', identity_number: nisClaim },
+    },
+    allowStatus: [400, 422, 500],
+  });
+  assert.equal(duplicatePending.ok, false, 'A second pending claim unexpectedly registered.');
+  await rpc(config, 'review_member', {
+    p_user_id: claimMember.id,
+    p_approve: false,
+    p_reason: 'Uji pengajuan ulang',
+  }, { token: adminToken });
+  const claimToken = await login(claimEmailA);
+  await rpc(config, 'resubmit_member_application', {}, { token: claimToken });
+  const duplicateAfterResubmit = await apiRequest(config, '/auth/v1/signup', {
+    method: 'POST',
+    body: {
+      email: `claim-c-${runId}@example.invalid`,
+      password,
+      data: { account_kind: 'member', identity_kind: 'nis', identity_number: nisClaim },
+    },
+    allowStatus: [400, 422, 500],
+  });
+  assert.equal(duplicateAfterResubmit.ok, false, 'Resubmitted account did not reserve its identity.');
+  await rpc(config, 'review_member', {
+    p_user_id: claimMember.id,
+    p_approve: false,
+    p_reason: 'Uji pelepasan claim',
+  }, { token: adminToken });
+  await signUpMember(`claim-d-${runId}@example.invalid`, 'nis', nisClaim);
+  log('exclusive claim, rejection release, same-account resubmission', 'PASS');
   await rpc(config, 'review_member', {
     p_user_id: memberA.id,
     p_approve: true,
@@ -136,7 +188,7 @@ async function main() {
     p_reason: null,
   }, { token: adminToken });
   const memberAToken = await login(memberAEmail);
-  const memberBToken = await login(memberBEmail);
+  let memberBToken = await login(memberBEmail);
   log('GoTrue signup, confirmation, approval, login', 'PASS');
 
   const anonRegistry = await apiRequest(config, '/rest/v1/student_registry?select=id', {
@@ -156,6 +208,43 @@ async function main() {
   );
   assert.equal(adminMembers.length, 2, 'Admin cannot read both synthetic member profiles.');
   log('anon/member/admin RLS separation', 'PASS');
+
+  const issuedRecovery = await apiRequest(config, '/functions/v1/account-recovery', {
+    token: adminToken,
+    method: 'POST',
+    body: { action: 'issue', target_user_id: memberB.id },
+  });
+  assert.match(issuedRecovery.data?.challenge_id ?? '', /^[0-9a-f-]{36}$/i);
+  assert.match(issuedRecovery.data?.code ?? '', /^[A-Z0-9]{4}(?:-[A-Z0-9]{4}){2}$/);
+  const recoveredPassword = `Recovered-${randomBytes(12).toString('base64url')}!8b`;
+  await apiRequest(config, '/functions/v1/account-recovery', {
+    method: 'POST',
+    body: {
+      action: 'redeem',
+      challenge_id: issuedRecovery.data.challenge_id,
+      code: issuedRecovery.data.code,
+      password: recoveredPassword,
+    },
+  });
+  const reusedRecovery = await apiRequest(config, '/functions/v1/account-recovery', {
+    method: 'POST',
+    body: {
+      action: 'redeem',
+      challenge_id: issuedRecovery.data.challenge_id,
+      code: issuedRecovery.data.code,
+      password: recoveredPassword,
+    },
+    allowStatus: [400],
+  });
+  assert.equal(reusedRecovery.ok, false, 'A recovery code was unexpectedly reusable.');
+  const oldPasswordLogin = await apiRequest(config, '/auth/v1/token?grant_type=password', {
+    method: 'POST',
+    body: { email: memberBEmail, password },
+    allowStatus: [400],
+  });
+  assert.equal(oldPasswordLogin.ok, false, 'Old password still worked after assisted recovery.');
+  memberBToken = await login(memberBEmail, recoveredPassword);
+  log('assisted recovery, password replacement, one-time code', 'PASS');
 
   await apiRequest(config, '/rest/v1/library_settings?id=eq.true', {
     token: adminToken,

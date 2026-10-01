@@ -421,12 +421,29 @@ class _AuthPageState extends State<AuthPage> {
               ),
             ),
             if (!_signup)
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: _busy ? null : _requestPasswordReset,
-                  child: const Text('Lupa kata sandi?'),
-                ),
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                spacing: 8,
+                children: [
+                  if (widget.expectedRole == 'member')
+                    TextButton(
+                      onPressed: _busy
+                          ? null
+                          : () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) =>
+                                    const AccountAccessRecoveryPage(),
+                              ),
+                            ),
+                      child: const Text('Tidak bisa mengakses email?'),
+                    )
+                  else
+                    const SizedBox.shrink(),
+                  TextButton(
+                    onPressed: _busy ? null : _requestPasswordReset,
+                    child: const Text('Lupa kata sandi?'),
+                  ),
+                ],
               ),
             const SizedBox(height: 8),
             if (widget.expectedRole == 'member' ||
@@ -479,6 +496,222 @@ class _AuthPageState extends State<AuthPage> {
   );
 }
 
+typedef RedeemAccountRecovery = Future<void> Function({
+  required String challengeId,
+  required String code,
+  required String password,
+});
+
+class AccountAccessRecoveryPage extends StatefulWidget {
+  const AccountAccessRecoveryPage({super.key, this.redeem});
+
+  final RedeemAccountRecovery? redeem;
+
+  @override
+  State<AccountAccessRecoveryPage> createState() =>
+      _AccountAccessRecoveryPageState();
+}
+
+class _AccountAccessRecoveryPageState extends State<AccountAccessRecoveryPage> {
+  final _form = GlobalKey<FormState>();
+  final _challengeId = TextEditingController();
+  final _code = TextEditingController();
+  final _password = TextEditingController();
+  final _confirmation = TextEditingController();
+  bool _busy = false;
+  bool _obscure = true;
+  String? _notice;
+  String? _error;
+
+  @override
+  void dispose() {
+    _challengeId.dispose();
+    _code.dispose();
+    _password.dispose();
+    _confirmation.dispose();
+    super.dispose();
+  }
+
+  String? _required(String? value) =>
+      value == null || value.trim().isEmpty ? 'Bagian ini wajib diisi.' : null;
+
+  Future<void> _redeemWithServer({
+    required String challengeId,
+    required String code,
+    required String password,
+  }) async {
+    await Supabase.instance.client.functions.invoke(
+      'account-recovery',
+      body: {
+        'action': 'redeem',
+        'challenge_id': challengeId,
+        'code': code,
+        'password': password,
+      },
+    );
+  }
+
+  Future<void> _submit() async {
+    if (!_form.currentState!.validate()) return;
+    if (_password.text != _confirmation.text) {
+      setState(() => _error = 'Kata sandi belum sama.');
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _busy = true;
+      _notice = null;
+      _error = null;
+    });
+    try {
+      final code = _code.text.toUpperCase().replaceAll(
+        RegExp(r'[^A-Z0-9]'),
+        '',
+      );
+      await (widget.redeem ?? _redeemWithServer)(
+        challengeId: _challengeId.text.trim(),
+        code: code,
+        password: _password.text,
+      );
+      if (mounted) {
+        setState(() => _notice = 'Akses akun berhasil dipulihkan.');
+      }
+    } on FunctionException catch (error) {
+      if (mounted) {
+        final details = error.details;
+        setState(
+          () => _error = details is Map && details['message'] is String
+              ? details['message'] as String
+              : 'Kode pemulihan salah, kedaluwarsa, atau sudah digunakan.',
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = 'Pemulihan belum berhasil. Periksa kode atau minta pengurus membuat kode baru.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Pulihkan akses anggota')),
+    body: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 540),
+        child: ListView(
+          padding: const EdgeInsets.all(24),
+          children: [
+            const PaperCard(
+              child: Text(
+                'Datang ke pengurus dengan kartu pelajar atau identitas sekolah. Setelah identitasmu diperiksa, pengurus akan memberikan ID dan kode yang berlaku 15 menit.',
+              ),
+            ),
+            const SizedBox(height: 18),
+            if (_notice != null) ...[
+              Text(_notice!, textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+            ],
+            if (_error != null) ...[
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+              const SizedBox(height: 12),
+            ],
+            Form(
+              key: _form,
+              child: Column(
+                children: [
+                  TextFormField(
+                    controller: _challengeId,
+                    validator: _required,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: 'ID pemulihan',
+                      prefixIcon: Icon(Icons.receipt_long_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _code,
+                    validator: (value) {
+                      final normalized = value?.toUpperCase().replaceAll(
+                        RegExp(r'[^A-Z0-9]'),
+                        '',
+                      );
+                      return normalized?.length == 12
+                          ? null
+                          : 'Masukkan kode 12 karakter dari pengurus.';
+                    },
+                    textCapitalization: TextCapitalization.characters,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: 'Kode dari pengurus',
+                      hintText: 'ABCD-EFGH-IJKL',
+                      prefixIcon: Icon(Icons.key_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _password,
+                    validator: (value) => value == null || value.length < 8
+                        ? 'Gunakan minimal 8 karakter.'
+                        : null,
+                    obscureText: _obscure,
+                    textInputAction: TextInputAction.next,
+                    decoration: InputDecoration(
+                      labelText: 'Kata sandi baru',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        tooltip: _obscure
+                            ? 'Tampilkan kata sandi'
+                            : 'Sembunyikan kata sandi',
+                        onPressed: () => setState(() => _obscure = !_obscure),
+                        icon: Icon(
+                          _obscure
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _confirmation,
+                    validator: _required,
+                    obscureText: true,
+                    textInputAction: TextInputAction.done,
+                    decoration: const InputDecoration(
+                      labelText: 'Ulangi kata sandi baru',
+                      prefixIcon: Icon(Icons.lock_reset_outlined),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: _busy ? null : _submit,
+              icon: _busy
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.lock_reset_outlined),
+              label: const Text('Pulihkan akun'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key, required this.session});
   final Session session;
@@ -488,6 +721,7 @@ class AccountPage extends StatefulWidget {
 
 class _AccountPageState extends State<AccountPage> {
   Future<Map<String, dynamic>?>? _profile;
+  bool _resubmitting = false;
   @override
   void initState() {
     super.initState();
@@ -501,6 +735,27 @@ class _AccountPageState extends State<AccountPage> {
       .maybeSingle();
 
   Future<void> _signOut() => Supabase.instance.client.auth.signOut();
+
+  Future<void> _resubmit() async {
+    setState(() => _resubmitting = true);
+    try {
+      await Supabase.instance.client.rpc('resubmit_member_application');
+      final next = _loadProfile();
+      if (mounted) setState(() => _profile = next);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Pengajuan ulang belum berhasil. Identitas mungkin sedang dipakai pengajuan lain.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _resubmitting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -570,6 +825,16 @@ class _AccountPageState extends State<AccountPage> {
               return _status(
                 'Pendaftaran belum disetujui.${rejection == null ? '' : ' Alasan: $rejection'}',
                 Icons.info_outline,
+                detail: 'Perbaiki data yang diminta, lalu gunakan akun yang sama untuk mengajukan kembali.',
+                action: FilledButton.icon(
+                  onPressed: _resubmitting ? null : _resubmit,
+                  icon: const Icon(Icons.replay_outlined),
+                  label: Text(
+                    _resubmitting
+                        ? 'Mengajukan…'
+                        : 'Ajukan pendaftaran kembali',
+                  ),
+                ),
               );
             }
             if (status != 'active') {

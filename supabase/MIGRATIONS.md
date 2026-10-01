@@ -14,8 +14,10 @@ These scripts target a **dedicated Perpus Supabase project**. Keep the applicati
 8. Apply `migrations/202609300001_book_covers.sql` for the optional public cover bucket and `books.cover_path`.
 9. Apply `migrations/202609300002_classroom_loans.sql` for classroom loan sessions and partial returns.
 10. Apply `migrations/202609300003_inventory_lock_protocol.sql` last. It enforces one inventory lock order and moves copy creation/book archive behind RPCs.
-11. Run `verify_migration.sql` and `verify_staff_admin.sql`; they check staff separation, invitation token privacy, RLS, restricted direct writes, RPC presence, archive, covers, classroom loans, lock protocol, and the private evidence bucket.
-12. Run `seed.sql` only in a disposable development project. It creates sample inventory, not real members.
+11. Apply `migrations/202610010001_member_claim_recovery.sql` for one pending/active claim per student, same-account resubmission, and trusted account-recovery challenges.
+12. Deploy `functions/account-recovery` with gateway JWT verification disabled; the function verifies admin authorization internally for issuing codes and keeps the service-role key server-side.
+13. Run `verify_migration.sql` and `verify_staff_admin.sql`; they check staff separation, invitation token privacy, RLS, restricted direct writes, RPC presence, archive, covers, classroom loans, lock protocol, member claims, recovery grants, and the private evidence bucket.
+14. Run `seed.sql` only in a disposable development project. It creates sample inventory, not real members.
 
 PowerShell/Node SQL smoke tests for both migrations are available at `scripts/sql-tests` (`npm ci`, then `npm test`). They use PGlite and mocked Auth/Storage schemas. They do not prove GoTrue email delivery, the real Storage API, signed URLs, or multi-connection concurrency. Verify those against a disposable Supabase stack before a server migration.
 

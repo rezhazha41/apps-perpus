@@ -99,17 +99,14 @@ void main() {
       MaterialApp(
         theme: perpusTheme(),
         home: AccountAccessRecoveryPage(
-          redeem: ({
-            required challengeId,
-            required code,
-            required password,
-          }) async {
-            submitted = {
-              'challengeId': challengeId,
-              'code': code,
-              'password': password,
-            };
-          },
+          redeem:
+              ({required challengeId, required code, required password}) async {
+                submitted = {
+                  'challengeId': challengeId,
+                  'code': code,
+                  'password': password,
+                };
+              },
         ),
       ),
     );

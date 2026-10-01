@@ -1,6 +1,7 @@
 \set ON_ERROR_STOP on
 create role anon nologin;
 create role authenticated nologin;
+create role service_role nologin bypassrls;
 create schema auth;
 create schema storage;
 create table auth.users (
@@ -36,4 +37,3 @@ grant usage on schema auth,storage to authenticated;
 grant execute on function auth.uid() to authenticated;
 grant select,insert on storage.objects to authenticated;
 grant execute on function storage.foldername(text) to authenticated;
-

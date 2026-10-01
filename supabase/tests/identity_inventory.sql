@@ -9,8 +9,17 @@ insert into public.student_registry(id,nis,nisn,full_name,class_name) values
 insert into auth.users(id,email,raw_user_meta_data) values
  ('20000000-0000-4000-8000-000000000001','admin@example.invalid','{"account_kind":"member","identity_kind":"nis","identity_number":"990001"}'),
  ('20000000-0000-4000-8000-000000000002','member@example.invalid','{"account_kind":"member","identity_kind":"nis","identity_number":"990002","role":"admin"}'),
- ('20000000-0000-4000-8000-000000000003','other@example.invalid','{"account_kind":"member","identity_kind":"nis","identity_number":"990003"}'),
- ('20000000-0000-4000-8000-000000000004','duplicate@example.invalid','{"account_kind":"member","identity_kind":"nisn","identity_number":"880002"}');
+ ('20000000-0000-4000-8000-000000000003','other@example.invalid','{"account_kind":"member","identity_kind":"nis","identity_number":"990003"}');
+do $$ begin
+ begin
+   insert into auth.users(id,email,raw_user_meta_data) values
+    ('20000000-0000-4000-8000-000000000004','duplicate@example.invalid',
+     '{"account_kind":"member","identity_kind":"nisn","identity_number":"880002"}');
+   raise exception 'Duplicate pending identity accepted';
+ exception when raise_exception then
+   if sqlerrm <> 'Pendaftaran tidak dapat diproses. Hubungi admin perpustakaan.' then raise; end if;
+ end;
+end $$;
 -- Operator-created Studio Auth user is intentionally unprivileged until linked.
 insert into auth.users(id,email,raw_user_meta_data)
 values ('20000000-0000-4000-8000-000000000008','studio-admin@example.invalid','{}');
@@ -138,14 +147,6 @@ update auth.users set email_confirmed_at = now() where id='20000000-0000-4000-80
 set local role authenticated;
 select public.review_member('20000000-0000-4000-8000-000000000002',true);
 select public.review_member('20000000-0000-4000-8000-000000000003',true);
-do $$ begin
- begin
-   perform public.review_member('20000000-0000-4000-8000-000000000004',true);
-   raise exception 'Duplicate identity activated';
- exception when raise_exception then
-   if sqlerrm <> 'Identitas tidak dapat diaktifkan.' then raise; end if;
- end;
-end $$;
 select set_config('request.jwt.claim.sub','20000000-0000-4000-8000-000000000002',true);
 do $$ begin
  if (select count(*) from public.student_registry) <> 1 then raise exception 'Member registry isolation failed'; end if;

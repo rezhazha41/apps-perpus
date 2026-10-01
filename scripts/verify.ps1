@@ -28,3 +28,7 @@ Push-Location (Join-Path $PSScriptRoot 'supabase-integration')
 try {
     Invoke-Checked 'npm.cmd' @('test')
 } finally { Pop-Location }
+Push-Location (Join-Path $repoRoot 'supabase\functions\account-recovery')
+try {
+    Invoke-Checked 'node.exe' @('--test', 'helpers.test.mjs')
+} finally { Pop-Location }

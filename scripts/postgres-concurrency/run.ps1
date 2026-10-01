@@ -49,6 +49,19 @@ try{
   }
   Invoke-File (Join-Path $PSScriptRoot 'fixture.sql')|Out-Null
 
+  Write-Output 'CASE two concurrent signups, same student claim'
+  $claimA=Start-File (Join-Path $PSScriptRoot 'claim_a.sql') 'claim_a'
+  Start-Sleep -Milliseconds 250
+  $claimB=Start-File (Join-Path $PSScriptRoot 'claim_b.sql') 'claim_b'
+  $claimAExit=Wait-File $claimA 'claim signup A';$claimBExit=Wait-File $claimB 'claim signup B'
+  Write-Output ("claim exits: A=$claimAExit B=$claimBExit")
+  $claimState=Scalar "select count(*)::text||'|'||string_agg(status,',' order by id) from public.profiles where claimed_student_id='10000000-0000-4000-8000-000000000014'"
+  if($claimState -ne '1|pending'){throw "Concurrent claim invariant failed: $claimState"}
+  $claimErrorFiles=@((Join-Path $logDir 'claim_a.err'),(Join-Path $logDir 'claim_b.err'))
+  $claimFailures=@(Select-String -LiteralPath $claimErrorFiles -SimpleMatch 'ERROR:').Count
+  if($claimFailures -ne 1){throw "Concurrent claim must have exactly one rejected signup (failures=$claimFailures)"}
+  Write-Output 'PASS concurrent member claim: one pending winner'
+
   Write-Output 'CASE approval/archive'
   $approval=Start-File (Join-Path $PSScriptRoot 'approve_archive.sql') 'approval_archive'
   Start-Sleep -Milliseconds 250
