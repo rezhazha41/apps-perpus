@@ -74,11 +74,13 @@ async function redeemChallenge(client, body) {
     return json(400, { message: 'Kode pemulihan salah, kedaluwarsa, atau sudah digunakan.' });
   }
 
-  const attributes = { password };
-  if (result.expected_email) {
-    attributes.email = result.expected_email;
-    attributes.email_confirm = true;
-  }
+  const attributes = result.expected_email
+    ? {
+        password,
+        email: result.expected_email,
+        email_confirm: true,
+      }
+    : { password };
   const { error: updateError } = await client.auth.admin.updateUserById(
     result.user_id,
     attributes,

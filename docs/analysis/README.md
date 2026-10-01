@@ -1,8 +1,8 @@
 # Analisis M1–M2 dan kesiapan M3
 
-Pembaruan terbaru: [verifikasi fondasi M3 tanggal 1 Oktober 2026](verification-2026-10-01.md). Akses server read-only sudah PASS; hasilnya membuktikan migrasi lock inventaris terbaru belum aktif. Runner integrasi nyata sudah tersedia, tetapi runtime pada stack disposable masih BLOCKED karena kredensial/environment uji belum tersedia.
+Pembaruan terbaru: [analisis claim dan pemulihan akun](08-claim-dan-pemulihan-akun.md) serta [verifikasi fondasi M3 tanggal 1 Oktober 2026](verification-2026-10-01.md). Kebijakan claim sudah diputuskan dan diimplementasikan. Verifier lokal serta race PostgreSQL dua koneksi PASS. Server read-only tidak memiliki claim ganda, tetapi migrasi lock dan claim/pemulihan terbaru belum aktif. Runtime pada stack disposable masih BLOCKED karena kredensial/environment uji belum tersedia.
 
-Tindak lanjut dan hasil terbaru ada di [bukti verifikasi 30 September 2026](verification-2026-09-30.md). Kebijakan claim pending menunggu keputusan; pemeriksaan server aktif dan integrasi GoTrue/Storage masih BLOCKED.
+Tindak lanjut sebelumnya ada di [bukti verifikasi 30 September 2026](verification-2026-09-30.md). Integrasi GoTrue/Storage/Edge Function nyata tetap BLOCKED sampai tersedia stack disposable.
 
 Untuk melanjutkan dari sesi/akun lain, mulai dari [HANDOFF.md](HANDOFF.md).
 
@@ -17,5 +17,6 @@ Indeks analisis M1–M2 dan tindak lanjut fondasi M3 pada 30 September 2026. Det
 - [Reliability Flutter](05-reliability-flutter.md)
 - [Kesiapan M3 dan test plan](06-kesiapan-m3-dan-test-plan.md)
 - [Rekonsiliasi dokumentasi](07-rekonsiliasi-dokumentasi.md)
+- [Claim siswa dan pemulihan akun](08-claim-dan-pemulihan-akun.md)
 
 Batas bukti audit awal digantikan oleh tindak lanjut di atas. Verifier lokal dan PostgreSQL sementara lulus; Supabase aktif belum dapat diperiksa dan integrasi GoTrue/Storage belum diuji.

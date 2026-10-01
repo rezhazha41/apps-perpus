@@ -2,7 +2,7 @@
 
 Direktori proyek: `D:\apps\Perpus`
 
-Status: M1 dan fitur utama M2 tersedia. Alur M3 untuk pengajuan pinjaman, bukti foto privat, persetujuan, pengembalian sebagian/penuh, kehilangan, dan peminjaman pembelajaran sudah tersedia pada kode. Verifier lokal Flutter, data-access, dan SQL lulus. Regression PostgreSQL dua koneksi juga membuktikan persetujuan tidak dapat menghasilkan pinjaman aktif pada buku terarsip, dua persetujuan pada eksemplar yang sama hanya memiliki satu pemenang, dan operasi multi-item dengan urutan berbeda selesai tanpa deadlock. Verifikasi server read-only pada 1 Oktober 2026 membuktikan migrasi penguncian terbaru belum diterapkan; integrasi GoTrue dan Storage nyata masih harus diuji pada Supabase terisolasi. Aplikasi belum dinyatakan sebagai MVP produksi.
+Status: M1 dan fitur utama M2 tersedia. Alur M3 untuk pengajuan pinjaman, bukti foto privat, persetujuan, pengembalian sebagian/penuh, kehilangan, dan peminjaman pembelajaran sudah tersedia pada kode. Verifier lokal Flutter, data-access, dan SQL lulus. Regression PostgreSQL dua koneksi juga membuktikan persetujuan tidak dapat menghasilkan pinjaman aktif pada buku terarsip, dua persetujuan pada eksemplar yang sama hanya memiliki satu pemenang, dan operasi multi-item dengan urutan berbeda selesai tanpa deadlock. Kebijakan satu claim terbuka per siswa, pengajuan ulang memakai akun yang sama, dan pemulihan akun dengan verifikasi pengurus sudah diimplementasikan serta lulus pengujian lokal. Verifikasi server read-only pada 1 Oktober 2026 membuktikan migrasi penguncian dan migrasi claim/pemulihan terbaru belum diterapkan; integrasi GoTrue, Edge Function, dan Storage nyata masih harus diuji pada Supabase terisolasi. Aplikasi belum dinyatakan sebagai MVP produksi.
 
 Keputusan terbaru pengguna: **Supabase self-hosted di server lokal/LAN melalui Nginx Proxy Manager**, login email + kata sandi, aktivasi akun melalui verifikasi admin. Kebijakan lain yang masih berupa usulan pada PRD tetap belum dianggap disetujui.
 
@@ -36,7 +36,7 @@ Tujuan utama:
 | Push notification | Firebase Cloud Messaging | Pengingat pada perangkat |
 | Proses terjadwal | Scheduler dan fungsi backend | Pemeriksaan jatuh tempo dan pengiriman pengingat |
 
-Login menggunakan email dan kata sandi. NIS/NISN hanya memvalidasi kelayakan pendaftaran; pemulihan memakai tautan email Supabase Auth.
+Login menggunakan email dan kata sandi. NIS/NISN hanya memvalidasi kelayakan pendaftaran. Pemulihan normal memakai tautan email Supabase Auth. Jika siswa tidak dapat mengakses email, pengurus dapat memverifikasi identitas secara langsung lalu memberikan kode pemulihan sekali pakai yang kedaluwarsa dalam 15 menit; kode mentah tidak disimpan di database.
 
 Referensi teknologi:
 
@@ -90,6 +90,8 @@ Minimal salah satu NIS atau NISN wajib tersedia. Simpan nomor sebagai teks agar 
 NIS/NISN bukan kata sandi atau rahasia. Mengetahui nomor siswa saja belum membuktikan bahwa pendaftar adalah pemilik identitas. Verifikasi admin atau kode aktivasi mencegah orang lain mengklaim akun siswa.
 
 Satu siswa hanya boleh mempunyai satu akun, termasuk ketika mencoba mendaftar memakai NIS setelah pernah memakai NISN. Pemeriksaan dan penautan akun dilakukan secara atomik di server. Daftar identitas siswa tidak dapat dibaca bebas oleh pengguna yang belum login. Anggota tidak dapat mengubah perannya menjadi admin.
+
+Hanya satu akun berstatus menunggu atau aktif yang boleh memegang claim siswa yang sama. Jika pengurus menolak pendaftaran, claim dilepas otomatis agar tidak mengunci identitas. Siswa memperbaiki dan mengajukan ulang dari akun yang sama; pembuatan akun Auth baru bukan alur utama. Pengurus wajib memeriksa identitas fisik sebelum menerbitkan kode pemulihan akses.
 
 ## 5. Inventaris dan QR
 
@@ -223,8 +225,14 @@ flowchart TD
     H --> I[Pengurus meninjau data anggota]
     I -->|Setujui| J[Hubungkan satu siswa ke satu akun]
     I -->|Tolak| K[Simpan alasan penolakan]
+    K --> K1[Lepas claim dan perbaiki akun yang sama]
+    K1 --> I
     J --> L[Akun anggota aktif]
     B -->|Masuk anggota atau pengurus| M[Login email dan kata sandi]
+    B -->|Tidak dapat mengakses email| R[Pengurus verifikasi identitas fisik]
+    R --> S[Terbitkan kode sekali pakai 15 menit]
+    S --> T[Siswa membuat kata sandi baru]
+    T --> M
     L --> M
     M --> N{Role dan status sesuai?}
     N -->|Anggota aktif| O[Katalog anggota]
@@ -232,7 +240,7 @@ flowchart TD
     N -->|Menunggu, ditolak, atau role salah| Q[Tampilkan status atau alasan]
 ```
 
-Satu siswa hanya boleh ditautkan ke satu akun aktif. Aturan pelepasan claim ketika pendaftaran ditolak masih menunggu keputusan lembaga, sehingga alur daftar ulang belum ditetapkan sebagai kebijakan final.
+Satu siswa hanya boleh memiliki satu claim terbuka, baik berstatus menunggu maupun aktif. Penolakan melepaskan claim secara otomatis, lalu siswa mengajukan ulang memakai akun yang sama. Kode pemulihan hanya diterbitkan pengurus aktif setelah verifikasi langsung, berlaku sekali, dibatasi percobaan, dan tidak membuka endpoint pencarian identitas siswa.
 
 ### Alur anggota dan peminjaman
 
@@ -308,10 +316,11 @@ flowchart TD
 | Cakupan | Status saat ini |
 | --- | --- |
 | Navigasi anggota/pengurus, katalog, QR, CRUD, stok, pengajuan, pengembalian, kehilangan, dan pembelajaran | Tersedia pada kode aplikasi |
-| Flutter analyze, widget test, data-access, serta SQL fixture | Lulus lokal |
+| Flutter analyze, 9 widget test, 10 data-access test, SQL/RLS/RPC fixture, guard integrasi, dan helper kode pemulihan | Lulus lokal pada 1 Oktober 2026 |
 | Approval melawan archive, dua approval pada copy sama, dan multi-item berurutan berbeda | Lulus pada PostgreSQL sementara dengan dua koneksi |
-| Signup/login/reset melalui GoTrue nyata dan bukti foto melalui Storage API nyata | Belum diuji pada Supabase terisolasi |
-| Migrasi penguncian terbaru pada server aktif | Belum diverifikasi atau diterapkan |
+| Race dua signup atas siswa yang sama | Lulus pada PostgreSQL sementara dengan dua koneksi; tepat satu claim menunggu |
+| Signup/login/reset/pemulihan terbantu melalui GoTrue/Edge Function nyata dan bukti foto melalui Storage API nyata | Belum diuji pada Supabase terisolasi |
+| Migrasi penguncian serta claim/pemulihan terbaru pada server aktif | Belum diterapkan; preflight read-only menemukan 0 kelompok claim ganda |
 | Notifikasi/pengingat, retensi terjadwal, laporan PDF/CSV dan arsip tahunan | Tahap M4; belum dianggap selesai |
 
 ## 13. Struktur monorepo

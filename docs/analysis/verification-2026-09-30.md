@@ -15,7 +15,7 @@
 | Supabase aktif read-only | BLOCKED | SSH LAN `192.168.20.6:22` timeout. Jalur Access yang pernah diberikan tidak dapat meluncurkan `cloudflared.exe` (`CreateProcessW error 2`). Tidak ada query yang berhasil dijalankan di server. |
 | Supabase terisolasi: GoTrue, RLS/RPC melalui API, Storage privat | BLOCKED | Tidak tersedia stack disposable/kredensial API uji. PGlite fixtures tidak menggantikan layanan nyata. |
 | Pemindaian pola rahasia di source | PASS terbatas | Tidak ditemukan pola service-role/private-key/password dalam URL PostgreSQL pada `apps/mobile`, `packages`, `scripts`, `supabase`, atau `infra`. APK dan seluruh riwayat Git tidak dipindai; nama secret hanya muncul pada dokumentasi. |
-| Kebijakan claim pending | MENUNGGU KEPUTUSAN | Tidak diubah. Pilihan yang perlu diputuskan ada pada [analisis identitas](02-identitas-dan-auth.md). |
+| Kebijakan claim pending | HISTORIS; RESOLVED 1 OKTOBER | Pada saat test ini belum diputuskan. Keputusan dan bukti terbaru ada pada [analisis claim/pemulihan](08-claim-dan-pemulihan-akun.md). |
 
 Pemeriksaan tambahan selama pengerjaan: test cover upload awal di PGlite gagal dengan `permission denied for function is_eligible_member`; migrasi lock baru mengganti policy dengan predicate current-user terbatas, dan verifier akhir PASS. Percobaan pertama menyimpan log full verifier memakai path relatif gagal karena verifier berpindah direktori; dijalankan ulang dengan path log absolut dan seluruh tahap PASS. Kegagalan tooling tersebut tidak dihitung sebagai PASS.
 

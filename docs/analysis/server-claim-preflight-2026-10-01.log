@@ -1,0 +1,13 @@
+Perpus server read-only claim/recovery preflight
+Date: 2026-10-01 Asia/Jakarta
+Target: active self-hosted Supabase database through approved SSH path
+Operation: SELECT only; no migration, seed, or data change
+
+duplicate_open_claim_groups=0
+recovery_table_present=false
+claim_index_present=false
+
+Interpretation:
+- No duplicate pending/active student claim groups were present at check time.
+- The account recovery table and exclusive claim index were not deployed.
+

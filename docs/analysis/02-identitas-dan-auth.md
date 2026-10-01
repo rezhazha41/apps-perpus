@@ -1,6 +1,6 @@
 # Analisis identitas dan autentikasi
 
-> **Addendum 30 September 2026:** test SQL lokal lulus; GoTrue nyata belum diuji. Perubahan claim ditahan sampai kebijakan berikut dipilih.
+> **Addendum 1 Oktober 2026:** kebijakan claim sudah dipilih dan diimplementasikan melalui migrasi baru. Satu siswa dibatasi satu claim `pending`/`active`; penolakan melepas claim; pengajuan ulang memakai akun yang sama. Pemulihan terbantu tersedia untuk siswa yang tidak dapat mengakses email. Detail dan bukti terbaru ada di [08-claim-dan-pemulihan-akun.md](08-claim-dan-pemulihan-akun.md). GoTrue/Edge Function nyata masih belum diuji.
 
 **Status:** audit read-only, 30 September 2026.
 
@@ -11,12 +11,12 @@
 | Signup anggota NIS/NISN | Terbukti statis; runtime belum diuji | Trigger mencocokkan nomor identitas dengan registry dan membuat profil pending. |
 | Aktivasi anggota | Terbukti statis; runtime belum diuji | RPC memeriksa admin/email terkonfirmasi, mengunci profil/siswa, lalu menghubungkan akun. |
 | Maksimal satu akun aktif per siswa | Terbukti statis | Baris siswa dikunci saat aktivasi dan linked_user_id memiliki perlindungan unik. |
-| Satu claim pending per siswa | Bermasalah | Claim pending tidak mengunci registry dan profiles.claimed_student_id tidak unique. |
+| Satu claim pending per siswa | Terbukti lokal | Migrasi baru memakai lock registry dan indeks unik parsial; race PostgreSQL dua koneksi hanya menghasilkan satu pemenang. |
 | Login berdasarkan role | Terbukti sebagian | UI memeriksa role profil sesuai jalur login; hasil runtime belum diuji. |
 | Reset password | Belum diuji end-to-end | UI memakai callback; SMTP, GoTrue, deep link, dan update password nyata belum diverifikasi. |
 | Admin pertama | Implementasi tersedia; runtime belum terverifikasi | Ada skrip bootstrap/aktivasi. Audit tidak memastikan skrip tersebut sukses pada lingkungan yang dipakai. |
 
-## Temuan P1: beberapa pendaftaran pending dapat mengklaim siswa yang sama
+## Temuan P1 historis: beberapa pendaftaran pending dapat mengklaim siswa yang sama
 
 **Lokasi:** supabase/migrations/202609280001_identity_inventory.sql, fungsi private.create_member_profile; trigger diperbarui pada supabase/migrations/202609290002_staff_invites.sql.
 
@@ -24,19 +24,13 @@ Trigger memeriksa siswa aktif dan belum tertaut, lalu membuat profil berstatus p
 
 Aktivasi tetap mencegah dua akun aktif tertaut ke siswa yang sama. Risiko adalah pendaftaran pending ganda, beban moderasi, dan konflik akun Auth.
 
-**Tindak lanjut:** sebelum menambah constraint, sepakati apakah siswa boleh daftar ulang setelah ditolak dan bagaimana claim lama dilepas. Perubahan kebijakan belum dilakukan.
+**Tindak lanjut selesai secara lokal:** migrasi `202610010001_member_claim_recovery.sql` menolak claim kedua. Penolakan melepaskan claim dan akun yang sama dapat memakai `resubmit_member_application()`. Perubahan belum diterapkan ke server aktif.
 
 ## Test lanjutan
 
-### Keputusan kebijakan yang diperlukan — belum diubah
+### Keputusan kebijakan
 
-Pilih aturan untuk akun yang ditolak dan claim siswa sebelum perubahan migrasi:
-
-1. **Lepas claim saat ditolak:** siswa dapat mendaftar lagi dengan NIS/NISN yang sama.
-2. **Tahan sampai admin melepas:** penolakan mempertahankan claim; hanya tindakan admin eksplisit yang membuka pendaftaran ulang.
-3. **Gunakan akun yang sama:** claim tetap terikat; siswa menghubungi pengurus untuk memperbaiki/mengaktifkan ulang akun tanpa akun Auth baru.
-
-Untuk beberapa pendaftaran pending atas siswa yang sama, pilih juga: menolak pendaftaran kedua, atau mengizinkan beberapa claim tetapi hanya satu yang dapat diaktifkan. Sampai keputusan dibuat, behavior claim tidak diubah.
+Pendaftaran kedua ditolak selama ada claim menunggu/aktif. Penolakan admin melepaskan claim, tetapi siswa diarahkan memperbaiki dan mengajukan ulang menggunakan akun Auth yang sama. Jika akses email hilang, pengurus memverifikasi identitas langsung dan menerbitkan kode pemulihan sekali pakai.
 
 - Signup NIS dan NISN untuk satu siswa secara berurutan dan bersamaan.
 - Dua akun pending mencoba aktivasi serentak; hanya satu boleh aktif.
@@ -45,4 +39,4 @@ Untuk beberapa pendaftaran pending atas siswa yang sama, pilih juga: menolak pen
 - Reset password melalui email dan deep link pada Supabase terisolasi.
 - Bootstrap admin pertama di lingkungan uji.
 
-PGlite bukan pengganti GoTrue/email nyata. Tidak ada test dijalankan ulang dalam audit ini.
+PGlite bukan pengganti GoTrue/email nyata. Test SQL, Flutter, helper Edge Function, dan race PostgreSQL dua koneksi sudah dijalankan ulang pada 1 Oktober 2026; integrasi stack Supabase disposable masih BLOCKED.

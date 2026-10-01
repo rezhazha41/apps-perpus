@@ -1,5 +1,11 @@
 # Verifikasi fondasi M3 — 1 Oktober 2026
 
+## Addendum claim dan pemulihan akun
+
+Setelah kebijakan pengguna disetujui, migrasi claim/pemulihan, Edge Function, UI anggota/pengurus, dan test terkait ditambahkan. `scripts/verify.ps1` PASS setelah runner dibuat mandiri terhadap PATH minimal Windows. Hasil gabungan: Flutter analyze bersih, 9/9 widget test, 10/10 data-access test, SQL/RLS/RPC PASS, 7/7 guard integrasi PASS, serta 4/4 helper Edge Function PASS. PostgreSQL dua koneksi juga membuktikan dua signup atas siswa yang sama hanya menghasilkan satu claim menunggu.
+
+Preflight server aktif hanya menjalankan SELECT dan menemukan `duplicate_open_claim_groups=0`, `recovery_table_present=false`, serta `claim_index_present=false`. Migrasi dan Edge Function tidak diterapkan. Detail ada di [08-claim-dan-pemulihan-akun.md](08-claim-dan-pemulihan-akun.md).
+
 ## Ringkasan
 
 Pemeriksaan server read-only kini dapat dijalankan melalui Cloudflare SSH. Hasilnya menunjukkan migrasi archive, cover, dan classroom loans sudah tersedia, tetapi migrasi `202609300003_inventory_lock_protocol.sql` belum aktif. Tidak ada migrasi, seed, atau perubahan data yang dijalankan di server.
@@ -22,7 +28,8 @@ Runner integrasi GoTrue/RLS/RPC/Storage nyata sudah disiapkan dengan guard yang 
 | Syntax runner integrasi | PASS | `node --check` lulus untuk runner dan helper. |
 | Eksekusi runner tanpa kredensial uji | BLOCKED aman | Berhenti sebelum network dengan pesan marker disposable belum diberikan. |
 | GoTrue/RLS/RPC/Storage nyata pada stack terisolasi | BLOCKED | Membutuhkan environment uji terpisah dan tiga variabel koneksi. |
-| Kebijakan claim siswa ditolak/daftar ulang | MENUNGGU KEPUTUSAN | Tidak ada policy atau migrasi claim yang diubah. |
+| Kebijakan claim siswa ditolak/daftar ulang | PASS lokal | Satu claim terbuka, penolakan melepas claim, dan akun yang sama dapat mengajukan ulang. Server aktif belum dimigrasi. |
+| Pemulihan tanpa akses email | PASS lokal / BLOCKED integrasi | UI, SQL, Edge Function, dan unit test tersedia; GoTrue/Edge Function nyata menunggu stack disposable. |
 
 Output mentah server: [server-read-only-2026-10-01.log](server-read-only-2026-10-01.log).
 

@@ -1,5 +1,7 @@
 # Audit kesiapan M1–M2 dan fondasi M3
 
+> Catatan 1 Oktober 2026: temuan claim pending pada audit ini sudah diperbaiki secara lokal. Lihat [analisis claim dan pemulihan](analysis/08-claim-dan-pemulihan-akun.md). Isi di bawah dipertahankan sebagai bukti kondisi saat audit awal.
+
 > Dokumen ini adalah laporan gabungan sesi audit. Versi tematik yang lebih mudah dinavigasi tersedia di [docs/analysis/](analysis/README.md); gunakan indeks tersebut untuk membuka analisis per bidang.
 
 **Tanggal:** 30 September 2026  

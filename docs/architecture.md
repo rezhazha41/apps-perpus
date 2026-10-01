@@ -4,11 +4,12 @@ Keputusan 28 September 2026: Flutter Android; Supabase self-hosted pada server L
 
 ## Implementasi saat ini
 
-- `apps/mobile`: login Supabase; katalog anggota, pengelolaan katalog/inventaris/anggota admin, tinjauan pengajuan admin dan riwayat pinjaman anggota tersedia parsial. Mode demo terpisah dan berlabel.
+- `apps/mobile`: login Supabase; katalog anggota; scan QR buku; pengelolaan katalog, inventaris, dan anggota; pengajuan serta pengembalian; kehilangan; peminjaman pembelajaran; pengajuan ulang akun ditolak; dan pemulihan akses terbantu. Mode demo tetap terpisah dan berlabel.
 - `packages/domain`: model buku, eksemplar, siswa, pengajuan, pinjaman dan pemeriksaan kelayakan.
 - `packages/data_access`: `DemoLibrary`, penyimpanan sementara dalam memori. Hilang saat proses aplikasi berhenti. Ini bukan implementasi transaksi database atau otorisasi.
 - `packages/ui_kit`: lima token warna PRD, tema dan komponen bersama.
-- `supabase/migrations`: migrasi identitas/inventaris M2 dan fondasi transaksi/RLS M3. Migrasi transaksi diuji dengan PGlite tetapi belum diterapkan ke server. Form anggota dan alur pengembalian/kehilangan admin belum tersambung.
+- `supabase/migrations`: migrasi identitas/inventaris M2, transaksi/RLS M3, protokol lock inventaris, serta claim/pemulihan akun. Seluruh kontrak lokal lulus; dua migrasi terbaru belum diterapkan ke server aktif.
+- `supabase/functions/account-recovery`: fungsi server memvalidasi pengurus pada proses penerbitan kode, menukar kode sekali pakai dengan kata sandi baru, dan mencabut sesi lama. Service-role key hanya berada pada environment fungsi server.
 
 ```mermaid
 flowchart LR
@@ -22,8 +23,8 @@ flowchart LR
   R --> PG[(PostgreSQL)]
 ```
 
-Transaksi memakai RPC PostgreSQL dan RLS; persetujuan mengunci akun peminjam dan eksemplar, sementara indeks unik parsial menjaga satu pinjaman terbuka per eksemplar. PGlite menguji alur dasar, tetapi Supabase Storage/GoTrue nyata dan konkurensi multi-sesi belum diverifikasi.
+Transaksi memakai RPC PostgreSQL dan RLS; persetujuan mengunci buku lalu QR buku dalam urutan konsisten, sementara indeks unik parsial menjaga satu pinjaman terbuka per QR buku. Claim anggota juga memakai indeks unik parsial untuk membatasi satu profil menunggu/aktif per siswa. PostgreSQL dua koneksi membuktikan race utama secara lokal. Supabase Storage, GoTrue, dan Edge Function nyata masih harus diuji bersama pada stack disposable.
 
 Ketika backend tersambung, demo tetap menjadi pilihan build terpisah. Kegagalan jaringan tidak boleh dialihkan otomatis ke demo atau dianggap sukses. Peran berasal dari profil server; pengguna tidak memilih peran ketika login produksi.
 
-Belum tersedia: stack Supabase lokal aktif, form transaksi anggota, pemrosesan pengembalian/kehilangan admin, QR kamera, scheduler retensi, FCM, PDF/CSV dan arsip. Integrasi akun nyata belum diuji end-to-end. Build debug bukan validasi rilis.
+Belum tersedia: scheduler retensi bukti, FCM, PDF/CSV, dan arsip tahunan. Integrasi GoTrue/Storage/Edge Function nyata belum diuji end-to-end. Build debug bukan validasi rilis.

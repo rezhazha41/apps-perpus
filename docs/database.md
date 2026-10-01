@@ -14,13 +14,15 @@ Tindakan **Hapus dari katalog** menggunakan RPC `archive_book` sebagai soft dele
 
 Migrasi `202609280001_identity_inventory.sql` ditujukan untuk database Supabase pengembangan yang kosong. Tabel bawaan `auth.users` dan fungsi `auth.uid()` harus sudah tersedia. Jangan menerapkannya ke database yang dipakai aplikasi lain: trigger pendaftaran ini khusus Perpus.
 
-Migrasi M2 menyediakan registry siswa/staf, profil akun, buku, eksemplar, pengaturan, audit, pemeriksaan akses, undangan staf, dan RPC review. Migrasi M3 lokal menambahkan tabel/RPC transaksi, Storage privat, dan deadline retensi bukti; belum diterapkan ke server. Notifikasi, worker penghapusan, laporan, dan arsip belum tersedia.
+Migrasi M2 menyediakan registry siswa/staf, profil akun, buku, QR buku, pengaturan, audit, pemeriksaan akses, undangan staf, dan RPC review. Migrasi M3 lokal menambahkan tabel/RPC peminjaman, Storage privat, dan deadline retensi bukti. Migrasi `202609300003_inventory_lock_protocol.sql` menyatukan urutan lock buku lalu QR buku. Migrasi `202610010001_member_claim_recovery.sql` menambahkan claim eksklusif, pengajuan ulang akun yang sama, serta challenge pemulihan akun. Dua migrasi terakhir belum diterapkan ke server aktif. Notifikasi, worker penghapusan, laporan, dan arsip belum tersedia.
 
 ## Pendaftaran dan aktivasi
 
 Signup siswa memakai `identity_kind` (`nis`/`nisn`), `identity_number` (string), dan `contact`. Signup pengurus memakai token undangan acak yang diikat ke email dan kedaluwarsa 48 jam. Trigger auth membuat profil anggota/pengurus berstatus pending; role/status dari metadata klien tidak dipercaya. Registry tidak punya endpoint lookup publik dan token undangan tersembunyi dari akses tabel maupun audit snapshot.
 
-Klaim pending tidak mengunci identitas siswa. Admin memeriksa bukti kepemilikan lalu memanggil `review_member(p_user_id, p_approve, p_reason)`. RPC mengunci profil dan registry; satu siswa hanya ditautkan ke satu akun. Klaim lain tidak bisa diaktifkan setelah penautan. Penolakan membutuhkan alasan; akun ditolak dapat ditinjau kembali admin. Email yang terkonfirmasi dan keabsahan identitas adalah pemeriksaan terpisah.
+Indeks unik parsial `profiles_one_open_member_claim` membatasi satu profil anggota berstatus `pending` atau `active` per siswa. Pembuatan profil mengunci registry dan menolak claim kedua dengan pesan umum agar tidak menjadi sarana pencarian identitas. Admin memeriksa bukti kepemilikan lalu memanggil `review_member(p_user_id, p_approve, p_reason)`. Penolakan membutuhkan alasan dan melepaskan reservasi indeks; siswa memakai `resubmit_member_application()` pada akun yang sama setelah memperbaiki data. Persetujuan mengunci profil dan registry lalu menautkan akun secara atomik. Email terkonfirmasi dan keabsahan identitas tetap merupakan pemeriksaan terpisah.
+
+Tabel `account_recovery_challenges` menyimpan hash kode, bukan kode mentah. Challenge berlaku 15 menit, maksimal 5 percobaan, sekali pakai, dan tidak dapat dibaca client karena RLS serta grant dibatasi untuk `service_role`. Edge Function menerbitkan challenge hanya setelah JWT pengurus aktif diverifikasi oleh database. Penukaran kode dapat dilakukan sebelum login, mengubah kata sandi atau email yang telah dimasukkan pengurus setelah verifikasi langsung, lalu mencabut sesi lama. Endpoint tidak menyediakan pencarian NIS/NISN atau email publik.
 
 Klien tidak memperoleh UPDATE profiles, `linked_user_id`, atau identitas staf. Penautan staf terjadi hanya saat token cocok dan dikonsumsi trigger Auth; aktivasi oleh admin memakai RPC setelah email terkonfirmasi. Registry dan profil pending hanya dibaca admin/pemilik profil sesuai RLS. Member hanya membaca registry yang tertaut ke dirinya.
 
@@ -36,8 +38,8 @@ Pengaturan 7 hari/3 buku masih default pengembangan; `policy_confirmed=false` da
 
 ## Verifikasi sebelum integrasi
 
-Smoke test lokal untuk kedua migrasi dapat dijalankan dari `scripts/sql-tests` dengan `npm ci` lalu `npm test`. Runner memakai PostgreSQL embedded PGlite dan fixture Auth/Storage. Migrasi dan uji isolasi role sudah lolos; hasilnya belum membuktikan integrasi GoTrue, email, jaringan, Storage sungguhan, atau konkurensi lintas koneksi.
+Smoke test lokal seluruh migrasi dapat dijalankan dari `scripts/sql-tests` dengan `npm ci` lalu `npm test`. Runner memakai PostgreSQL embedded PGlite dan fixture Auth/Storage. Migrasi, claim lifecycle, challenge sekali pakai, dan isolasi role sudah lolos. PostgreSQL sementara dua koneksi juga membuktikan race claim dan transaksi inventaris. Hasil tersebut belum membuktikan integrasi GoTrue, email, jaringan, Storage, atau Edge Function sungguhan.
 
-Sebelum server, terapkan migrasi M3 pada Supabase lokal kosong dan jalankan `supabase/verify_migration.sql`. Tes fixture transaksi ada pada `supabase/tests/transactions.sql`; untuk Auth, rate limiting, konfirmasi email, pemulihan SMTP, Storage sungguhan, dan konkurensi multi-sesi diperlukan stack Supabase terisolasi.
+Sebelum server aktif, terapkan seluruh migrasi pada Supabase disposable dan jalankan `supabase/verify_migration.sql` serta `scripts/supabase-integration`. Untuk Auth, rate limiting, konfirmasi email, pemulihan SMTP, Storage, dan Edge Function sungguhan diperlukan stack Supabase terisolasi. Pemeriksaan read-only server aktif pada 1 Oktober 2026 menemukan 0 kelompok claim ganda, tetapi tabel/index claim-pemulihan baru belum ada.
 
 Audit berisi perubahan data siswa sehingga bersifat privat dan hanya admin berwenang yang dapat membacanya. Backup database dan file storage harus terkoordinasi; retensi arsip terpisah dari retensi foto.

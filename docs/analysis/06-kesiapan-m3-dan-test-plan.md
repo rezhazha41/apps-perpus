@@ -2,7 +2,7 @@
 
 > **Addendum 30 September 2026:** suite lokal PASS. Concurrency PostgreSQL dua koneksi PASS setelah migrasi lock baru; lihat [bukti verifikasi](verification-2026-09-30.md). Pemeriksaan Supabase aktif dan integrasi GoTrue/Storage BLOCKED.
 
-Status pada bagian audit awal di bawah mencatat temuan sebelum tindak lanjut. Kondisi terbaru: race inventory diperbaiki dan diuji lokal; runner SQL sudah mencakup archive/covers/classroom/lock; verifier full PASS. Claim siswa menunggu keputusan aturan, sedangkan integrasi Supabase terisolasi dan pemeriksaan server aktif BLOCKED.
+Status pada bagian audit awal di bawah mencatat temuan sebelum tindak lanjut. Kondisi terbaru: race inventory diperbaiki dan diuji lokal; runner SQL sudah mencakup archive/covers/classroom/lock/claim/recovery; verifier full PASS. Kebijakan claim sudah diimplementasikan dan server aktif sudah diperiksa read-only. Integrasi Supabase disposable tetap BLOCKED.
 
 **Status:** audit read-only, 30 September 2026. Tidak ada test dijalankan ulang.
 

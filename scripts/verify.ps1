@@ -3,6 +3,12 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $flutterExecutable = Join-Path $FlutterRoot 'bin\flutter.bat'
 $dartExecutable = Join-Path $FlutterRoot 'bin\dart.bat'
+$requiredToolPaths = @(
+    (Join-Path $env:SystemRoot 'System32'),
+    (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0'),
+    'C:\Program Files\Git\cmd'
+) | Where-Object { Test-Path -LiteralPath $_ }
+$env:Path = (($requiredToolPaths + ($env:Path -split ';')) | Select-Object -Unique) -join ';'
 function Invoke-Checked {
     param([string]$Executable, [string[]]$Arguments)
     & $Executable @Arguments

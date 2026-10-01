@@ -15,10 +15,11 @@ Hostname aktif `sup.tunneladguard.xyz` selalu ditolak. Key hanya dibaca dari env
 ## Prasyarat
 
 1. Gunakan Supabase terpisah yang boleh dibuang seluruhnya.
-2. Terapkan semua migrasi sesuai `supabase/MIGRATIONS.md`, termasuk migrasi lock inventaris.
-3. Pastikan GoTrue, PostgREST, dan Storage dapat diakses melalui URL uji.
-4. Jalankan `npm test` untuk menguji guard lokal.
-5. Jalankan `npm run integration` setelah semua environment variable terpasang.
+2. Terapkan semua migrasi sesuai `supabase/MIGRATIONS.md`, termasuk migrasi lock inventaris dan claim/pemulihan.
+3. Deploy `supabase/functions/account-recovery` pada stack disposable sesuai README fungsi.
+4. Pastikan GoTrue, PostgREST, Storage, dan Edge Function dapat diakses melalui URL uji.
+5. Jalankan `npm test` untuk menguji guard lokal.
+6. Jalankan `npm run integration` setelah semua environment variable terpasang.
 
 ## Cakupan runtime
 
@@ -27,5 +28,7 @@ Hostname aktif `sup.tunneladguard.xyz` selalu ditolak. Key hanya dibaca dari env
 - pemisahan anon, anggota A, anggota B, dan admin melalui RLS;
 - upload/read bukti privat serta penolakan akses lintas anggota;
 - pengajuan pinjaman, persetujuan RPC, dan perubahan status QR buku.
+- penolakan claim kedua, pelepasan claim setelah penolakan, dan pengajuan ulang akun yang sama;
+- penerbitan serta penukaran kode pemulihan, kegagalan kata sandi lama, keberhasilan kata sandi baru, dan penolakan reuse kode.
 
 Data memakai alamat `example.invalid` dan penanda unik per run. Bukti concurrency dua koneksi tetap berasal dari `scripts/postgres-concurrency/run.ps1`.
