@@ -1,4 +1,8 @@
-# Status implementasi — 30 September 2026
+# Status implementasi — 1 Oktober 2026
+
+## Addendum verifikasi 1 Oktober 2026
+
+Akses server aktif secara read-only melalui Cloudflare SSH sudah PASS. Archive, cover, classroom loans, dan bucket bukti privat ditemukan, tetapi verifier FAIL karena migrasi protokol lock inventaris terbaru belum aktif. Runner integrasi GoTrue/RLS/RPC/Storage sudah disiapkan dengan guard yang menolak server aktif; runtime tetap BLOCKED sampai tersedia stack Supabase disposable dan kredensial khusus uji. Aturan claim pending belum diputuskan dan tidak diubah. Lihat [bukti terbaru](analysis/verification-2026-10-01.md).
 
 ## Addendum verifikasi 30 September 2026
 

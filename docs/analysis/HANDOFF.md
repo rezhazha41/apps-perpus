@@ -1,6 +1,6 @@
 # Serah-terima proyek Perpus
 
-Dokumen ini merangkum konteks agar pekerjaan dapat dilanjutkan dari akun/sesi lain. Diperbarui 30 September 2026.
+Dokumen ini merangkum konteks agar pekerjaan dapat dilanjutkan dari akun/sesi lain. Diperbarui 1 Oktober 2026.
 
 ## Tujuan dan batasan
 
@@ -26,9 +26,9 @@ Dokumen ini merangkum konteks agar pekerjaan dapat dilanjutkan dari akun/sesi la
    - tahan claim sampai pengurus melepas;
    - pertahankan akun yang sama dan minta siswa menghubungi pengurus.
    Aturan pendaftaran pending kedua atas siswa yang sama juga perlu disepakati.
-2. **Supabase aktif belum terverifikasi.** SSH LAN `192.168.20.6:22` timeout; jalur Cloudflare tidak dapat menemukan `cloudflared.exe`. Tidak ada query/perubahan server yang berhasil.
-3. **Integrasi Auth/RLS/RPC/Storage nyata BLOCKED.** Siapkan Supabase self-hosted disposable, SMTP test inbox, anon key dan service-role khusus uji, serta akun sintetis admin, anggota A, anggota B. Jangan gunakan kredensial production.
-4. Setelah akses/environment tersedia: jalankan `supabase/verify_migration.sql` secara read-only pada server yang tepat; untuk integration test gunakan stack disposable dan buktikan GoTrue, RLS/RPC, object Storage privat lintas pengguna. Jangan terapkan migrasi baru sebelum review dan rencana terpisah.
+2. **Supabase aktif sudah diperiksa read-only melalui Cloudflare SSH.** Archive, covers, classroom loans, serta bucket evidence ditemukan. Verifier FAIL karena migrasi `202609300003_inventory_lock_protocol.sql` belum aktif; RPC lock/add copies belum ada dan hak tulis lama masih tersisa. Tidak ada perubahan server yang dilakukan. Lihat [bukti 1 Oktober](verification-2026-10-01.md).
+3. **Integrasi Auth/RLS/RPC/Storage nyata BLOCKED.** Runner aman sudah ada di `scripts/supabase-integration`, tetapi masih memerlukan Supabase disposable, anon key, service-role khusus uji, dan marker environment. Jangan gunakan kredensial production.
+4. Setelah environment tersedia: terapkan seluruh migrasi hanya pada stack disposable, jalankan runner, lalu simpan bukti. Penerapan migrasi lock ke server aktif harus memakai review dan rencana perubahan terpisah.
 
 ## Cara mengulang verifikasi lokal
 

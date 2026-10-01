@@ -38,6 +38,31 @@ test('requires an extra confirmation for a remote isolated stack', () => {
   );
 });
 
+test('rejects malformed, non-HTTP, or scoped base URLs', () => {
+  assert.throws(
+    () => loadIntegrationConfig({ ...baseEnv, PERPUS_TEST_SUPABASE_URL: 'not a URL' }),
+    /valid HTTP\(S\) URL/,
+  );
+  assert.throws(
+    () => loadIntegrationConfig({ ...baseEnv, PERPUS_TEST_SUPABASE_URL: 'ftp://localhost' }),
+    /must use HTTP or HTTPS/,
+  );
+  assert.throws(
+    () => loadIntegrationConfig({ ...baseEnv, PERPUS_TEST_SUPABASE_URL: 'http://localhost/rest/v1' }),
+    /only scheme, host, and optional port/,
+  );
+});
+
+test('requires distinct anon and service-role keys', () => {
+  assert.throws(
+    () => loadIntegrationConfig({
+      ...baseEnv,
+      PERPUS_TEST_SERVICE_ROLE_KEY: baseEnv.PERPUS_TEST_ANON_KEY,
+    }),
+    /must be different/,
+  );
+});
+
 test('accepts a local disposable stack and normalizes its base URL', () => {
   const config = loadIntegrationConfig({
     ...baseEnv,

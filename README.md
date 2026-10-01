@@ -2,7 +2,7 @@
 
 Direktori proyek: `D:\apps\Perpus`
 
-Status: M1 dan fitur utama M2 tersedia. Alur M3 untuk pengajuan pinjaman, bukti foto privat, persetujuan, pengembalian sebagian/penuh, kehilangan, dan peminjaman pembelajaran sudah tersedia pada kode. Verifier lokal Flutter, data-access, dan SQL lulus. Regression PostgreSQL dua koneksi juga membuktikan persetujuan tidak dapat menghasilkan pinjaman aktif pada buku terarsip, dua persetujuan pada eksemplar yang sama hanya memiliki satu pemenang, dan operasi multi-item dengan urutan berbeda selesai tanpa deadlock. Migrasi penguncian terbaru belum diverifikasi atau diterapkan pada server aktif; integrasi GoTrue dan Storage nyata masih harus diuji pada Supabase terisolasi. Aplikasi belum dinyatakan sebagai MVP produksi.
+Status: M1 dan fitur utama M2 tersedia. Alur M3 untuk pengajuan pinjaman, bukti foto privat, persetujuan, pengembalian sebagian/penuh, kehilangan, dan peminjaman pembelajaran sudah tersedia pada kode. Verifier lokal Flutter, data-access, dan SQL lulus. Regression PostgreSQL dua koneksi juga membuktikan persetujuan tidak dapat menghasilkan pinjaman aktif pada buku terarsip, dua persetujuan pada eksemplar yang sama hanya memiliki satu pemenang, dan operasi multi-item dengan urutan berbeda selesai tanpa deadlock. Verifikasi server read-only pada 1 Oktober 2026 membuktikan migrasi penguncian terbaru belum diterapkan; integrasi GoTrue dan Storage nyata masih harus diuji pada Supabase terisolasi. Aplikasi belum dinyatakan sebagai MVP produksi.
 
 Keputusan terbaru pengguna: **Supabase self-hosted di server lokal/LAN melalui Nginx Proxy Manager**, login email + kata sandi, aktivasi akun melalui verifikasi admin. Kebijakan lain yang masih berupa usulan pada PRD tetap belum dianggap disetujui.
 

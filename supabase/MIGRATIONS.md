@@ -11,10 +11,15 @@ These scripts target a **dedicated Perpus Supabase project**. Keep the applicati
 5. Apply `migrations/202609290003_operator_provisioned_auth_users.sql`.
 6. Apply `migrations/202609280002_transactions.sql`.
 7. Apply `migrations/202609290004_archive_book.sql` to add the admin-only soft-archive RPC for a book and its QR copies.
-8. Run `verify_migration.sql` and `verify_staff_admin.sql`; they check staff separation, invitation token privacy, RLS, restricted direct writes, RPC presence, and the private evidence bucket.
-9. Run `seed.sql` only in a disposable development project. It creates sample inventory, not real members.
+8. Apply `migrations/202609300001_book_covers.sql` for the optional public cover bucket and `books.cover_path`.
+9. Apply `migrations/202609300002_classroom_loans.sql` for classroom loan sessions and partial returns.
+10. Apply `migrations/202609300003_inventory_lock_protocol.sql` last. It enforces one inventory lock order and moves copy creation/book archive behind RPCs.
+11. Run `verify_migration.sql` and `verify_staff_admin.sql`; they check staff separation, invitation token privacy, RLS, restricted direct writes, RPC presence, archive, covers, classroom loans, lock protocol, and the private evidence bucket.
+12. Run `seed.sql` only in a disposable development project. It creates sample inventory, not real members.
 
 PowerShell/Node SQL smoke tests for both migrations are available at `scripts/sql-tests` (`npm ci`, then `npm test`). They use PGlite and mocked Auth/Storage schemas. They do not prove GoTrue email delivery, the real Storage API, signed URLs, or multi-connection concurrency. Verify those against a disposable Supabase stack before a server migration.
+
+The guarded real-service runner is in `scripts/supabase-integration`. It requires explicit disposable-environment markers and refuses the active Perpus hostname. It must never receive production service-role credentials.
 
 ## Transaction and role boundaries
 

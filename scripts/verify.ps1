@@ -24,3 +24,7 @@ try {
     Invoke-Checked 'npm.cmd' @('ci')
     Invoke-Checked 'npm.cmd' @('test')
 } finally { Pop-Location }
+Push-Location (Join-Path $PSScriptRoot 'supabase-integration')
+try {
+    Invoke-Checked 'npm.cmd' @('test')
+} finally { Pop-Location }

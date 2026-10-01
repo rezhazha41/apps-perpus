@@ -1,0 +1,15 @@
+﻿Perpus server read-only verification - 2026-10-01
+CHECK: supabase/verify_migration.sql
+ERROR:  Client can add copies outside the inventory RPC
+CONTEXT:  PL/pgSQL function inline_code_block line 36 at RAISE
+VERIFY_EXIT=3
+CHECK: active capability snapshot
+json_build_object
+{"lock_helper" : false, "add_book_copies" : false, "archive_book" : true, "class_loan_create" : true, "class_tables" : true, "cover_column" : true, "evidence_bucket_private" : true, "cover_bucket_public" : true, "direct_copy_insert" : false, "direct_book_archive" : true}
+(1 row)
+CAPABILITY_EXIT=0
+CHECK: detailed legacy inventory privileges
+json_build_object
+{"copy_insert_table_privilege" : false, "copy_insert_book_id" : true, "copy_insert_code" : true, "copies_insert_policy" : true, "book_archived_update_column" : true}
+(1 row)
+DETAIL_EXIT=0

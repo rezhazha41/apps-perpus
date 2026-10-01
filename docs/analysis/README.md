@@ -1,5 +1,7 @@
 # Analisis M1–M2 dan kesiapan M3
 
+Pembaruan terbaru: [verifikasi fondasi M3 tanggal 1 Oktober 2026](verification-2026-10-01.md). Akses server read-only sudah PASS; hasilnya membuktikan migrasi lock inventaris terbaru belum aktif. Runner integrasi nyata sudah tersedia, tetapi runtime pada stack disposable masih BLOCKED karena kredensial/environment uji belum tersedia.
+
 Tindak lanjut dan hasil terbaru ada di [bukti verifikasi 30 September 2026](verification-2026-09-30.md). Kebijakan claim pending menunggu keputusan; pemeriksaan server aktif dan integrasi GoTrue/Storage masih BLOCKED.
 
 Untuk melanjutkan dari sesi/akun lain, mulai dari [HANDOFF.md](HANDOFF.md).
