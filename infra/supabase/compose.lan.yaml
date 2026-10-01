@@ -1,0 +1,17 @@
+# Overlay for official Supabase self-hosted/v0.8.2; Docker Compose >= 2.24.4.
+# Copy next to the upstream docker-compose.yml. The external network must exist.
+services:
+  api-gw:
+    ports: !reset []
+    networks:
+      default: {}
+      perpus_proxy:
+        aliases:
+          - perpus-api
+  supavisor:
+    ports: !reset []
+
+networks:
+  perpus_proxy:
+    external: true
+    name: perpus_proxy

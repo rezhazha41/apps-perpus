@@ -1,0 +1,10 @@
+name: perpus_ui_kit
+description: Tema dan komponen visual bersama Perpus.
+version: 0.1.0
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+

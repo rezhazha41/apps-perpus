@@ -1,0 +1,12 @@
+name: perpus_data_access
+description: Kontrak repository dan sumber data demonstrasi Perpus.
+version: 0.1.0
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  perpus_domain:
+    path: ../domain
+dev_dependencies:
+  test: ^1.25.0
+

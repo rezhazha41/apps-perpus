@@ -1,0 +1,9 @@
+name: perpus_domain
+description: Model dan aturan perpustakaan tanpa dependensi UI.
+version: 0.1.0
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dev_dependencies:
+  test: ^1.25.0
+

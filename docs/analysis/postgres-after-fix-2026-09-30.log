@@ -1,0 +1,41 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20260930225909
+Username: DESKTOP-7ILIKON\PC
+RunAs User: DESKTOP-7ILIKON\PC
+Configuration Name: 
+Machine: DESKTOP-7ILIKON (Microsoft Windows NT 10.0.19045.0)
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+Start-Transcript -LiteralPath 'D:\apps\Perpus\docs\analysis\postgres-after-fix-2026-09-30.log' -Force | Out-Null; try { & '.\scripts\postgres-concurrency\run.ps1' } finally { Stop-Transcript }
+Process ID: 23180
+PSVersion: 5.1.19041.6456
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.19041.6456
+BuildVersion: 10.0.19041.6456
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+
+
+MIGRATION 202609280001_identity_inventory.sql
+MIGRATION 202609280002_transactions.sql
+MIGRATION 202609290001_staff_admin_operations.sql
+MIGRATION 202609290002_staff_invites.sql
+MIGRATION 202609290003_operator_provisioned_auth_users.sql
+MIGRATION 202609290004_archive_book.sql
+MIGRATION 202609300001_book_covers.sql
+MIGRATION 202609300002_classroom_loans.sql
+MIGRATION 202609300003_inventory_lock_protocol.sql
+CASE approval/archive
+PASS approval/archive: active loan remains unarchived and archive rejects
+CASE two approvals, same copy
+PASS same-copy approvals: one winner, no duplicate loan
+CASE reversed multi-item input order
+PASS reversed multi-item approvals: atomic winner, no deadlock
+POSTGRES_CONCURRENCY_RESULT=PASS
+**********************
+Windows PowerShell transcript end
+End time: 20260930225931
+**********************

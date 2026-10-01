@@ -1,0 +1,29 @@
+name: perpus_mobile
+description: Aplikasi perpustakaan sekolah untuk anggota dan pengurus.
+publish_to: none
+version: 0.1.0+1
+environment:
+  sdk: ^3.13.0
+dependencies:
+  app_links: ^7.2.1
+  flutter:
+    sdk: flutter
+  mobile_scanner: ^7.4.2
+  perpus_domain:
+    path: ../../packages/domain
+  perpus_data_access:
+    path: ../../packages/data_access
+  perpus_ui_kit:
+    path: ../../packages/ui_kit
+  qr_flutter: ^4.1.0
+  pdf: ^3.11.3
+  printing: ^5.15.1
+  shared_preferences: ^2.5.5
+  supabase_flutter: ^2.17.2
+  image_picker: ^1.2.3
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true

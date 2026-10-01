@@ -1,0 +1,42 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20260930225851
+Username: DESKTOP-7ILIKON\PC
+RunAs User: DESKTOP-7ILIKON\PC
+Configuration Name: 
+Machine: DESKTOP-7ILIKON (Microsoft Windows NT 10.0.19045.0)
+Host Application: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -Command try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}
+Start-Transcript -LiteralPath 'D:\apps\Perpus\docs\analysis\postgres-before-fix-2026-09-30.log' -Force | Out-Null; try { & '.\scripts\postgres-concurrency\run.ps1' -BeforeFix } catch { Write-Host ('EXPECTED RED: ' + $_.Exception.Message) }; Stop-Transcript
+Process ID: 23148
+PSVersion: 5.1.19041.6456
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.19041.6456
+BuildVersion: 10.0.19041.6456
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+
+
+MIGRATION 202609280001_identity_inventory.sql
+MIGRATION 202609280002_transactions.sql
+MIGRATION 202609290001_staff_admin_operations.sql
+MIGRATION 202609290002_staff_invites.sql
+MIGRATION 202609290003_operator_provisioned_auth_users.sql
+MIGRATION 202609290004_archive_book.sql
+MIGRATION 202609300001_book_covers.sql
+MIGRATION 202609300002_classroom_loans.sql
+CASE approval/archive
+POSTGRES_CONCURRENCY_RESULT=FAIL: Approval/archive invariant failed: borrowed|true|true|1
+--- approval_archive.err
+2026-09-30 22:58:58.049 +07 [15156] LOG:  starting PostgreSQL 18.4 on x86_64-windows, compiled by msvc-19.44.35227, 64-bit
+2026-09-30 22:58:58.050 +07 [15156] LOG:  listening on IPv4 address "127.0.0.1", port 55680
+2026-09-30 22:58:58.143 +07 [18416] LOG:  database system was shut down at 2026-09-30 22:58:54 +07
+2026-09-30 22:58:58.150 +07 [15156] LOG:  database system is ready to accept connections
+PS>TerminatingError(): "Approval/archive invariant failed: borrowed|true|true|1"
+EXPECTED RED: Approval/archive invariant failed: borrowed|true|true|1
+**********************
+Windows PowerShell transcript end
+End time: 20260930225901
+**********************
