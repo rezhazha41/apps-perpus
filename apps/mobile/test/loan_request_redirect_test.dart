@@ -25,7 +25,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(MemberLoanRequestPage), findsOneWidget);
 
-    tester.state<NavigatorState>(find.byType(Navigator)).pop(true);
+    tester
+        .widget<MemberLoanRequestPage>(find.byType(MemberLoanRequestPage))
+        .onSubmitted!();
     await tester.pumpAndSettle();
 
     expect(redirected, isTrue);

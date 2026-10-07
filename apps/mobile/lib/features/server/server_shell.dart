@@ -2149,18 +2149,29 @@ class _MemberQrScanPageState extends State<MemberQrScanPage> {
     );
   }
 
-  Future<void> _openLoanRequest(Map<String, dynamic> copy) async {
-    final completed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => MemberLoanRequestPage(copy: copy)),
+  void _openLoanRequest(Map<String, dynamic> copy) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (requestContext) => MemberLoanRequestPage(
+          copy: copy,
+          onSubmitted: () {
+            Navigator.of(requestContext).pop();
+            if (mounted) widget.onLoanRequestSubmitted();
+          },
+        ),
+      ),
     );
-    if (!mounted || completed != true) return;
-    widget.onLoanRequestSubmitted();
   }
 }
 
 class MemberLoanRequestPage extends StatefulWidget {
-  const MemberLoanRequestPage({super.key, required this.copy});
+  const MemberLoanRequestPage({
+    super.key,
+    required this.copy,
+    this.onSubmitted,
+  });
   final Map<String, dynamic> copy;
+  final VoidCallback? onSubmitted;
 
   @override
   State<MemberLoanRequestPage> createState() => _MemberLoanRequestPageState();
@@ -2258,7 +2269,7 @@ class _MemberLoanRequestPageState extends State<MemberLoanRequestPage> {
         context,
         'Pengajuan terkirim. Tunggu persetujuan pengurus sebelum membawa buku.',
       );
-      Navigator.of(context).pop(true);
+      widget.onSubmitted?.call();
     } catch (error) {
       if (mounted) _snack(context, _friendlyError(error));
     } finally {
