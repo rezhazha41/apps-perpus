@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:pdf/pdf.dart';
@@ -12,6 +14,10 @@ import 'package:printing/printing.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../app/date_formatters.dart';
+import '../../app/form_validators.dart';
+import 'loan_predicates.dart';
+
 String? _bookCoverUrl(Map<String, dynamic>? book) {
   final path = book?['cover_path'] as String?;
   if (path == null || path.isEmpty) return null;
@@ -20,11 +26,21 @@ String? _bookCoverUrl(Map<String, dynamic>? book) {
       .getPublicUrl(path);
 }
 
+String _copyCategory(Map<String, dynamic> copy) =>
+    ((copy['books'] as Map<String, dynamic>?)?['category'] as String? ?? '')
+        .trim();
+
 /// Server-backed screens are selected from the role loaded by SessionRouter.
 class ServerShell extends StatefulWidget {
-  const ServerShell({super.key, required this.isAdmin, required this.user});
+  const ServerShell({
+    super.key,
+    required this.isAdmin,
+    required this.user,
+    this.displayName,
+  });
   final bool isAdmin;
   final User user;
+  final String? displayName;
 
   @override
   State<ServerShell> createState() => _ServerShellState();
@@ -35,6 +51,14 @@ class _ServerShellState extends State<ServerShell> {
 
   @override
   Widget build(BuildContext context) {
+    final memberName = widget.displayName?.trim().isNotEmpty == true
+        ? widget.displayName!.trim()
+        : (widget.user.userMetadata?['full_name'] as String?)?.trim();
+    final accountLabel = widget.isAdmin
+        ? 'PENGURUS'
+        : (memberName?.isNotEmpty == true
+              ? memberName!
+              : widget.user.email?.split('@').first ?? 'Anggota');
     final destinations = widget.isAdmin
         ? const [
             NavigationDestination(
@@ -86,33 +110,45 @@ class _ServerShellState extends State<ServerShell> {
               ),
             ),
             const SizedBox(width: 10),
-            Tooltip(
-              message: 'Keluar otomatis setelah 24 jam tanpa aktivitas.',
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: PerpusColors.accent.withValues(alpha: .45),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      widget.isAdmin
-                          ? Icons.admin_panel_settings_outlined
-                          : Icons.person_outline,
-                      size: 14,
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      widget.isAdmin ? 'PENGURUS' : 'ANGGOTA',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: .5,
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 150),
+              child: Tooltip(
+                message: widget.isAdmin
+                    ? 'Pengurus | Keluar otomatis setelah 24 jam tanpa aktivitas.'
+                    : '$accountLabel | Keluar otomatis setelah 24 jam tanpa aktivitas.',
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: PerpusColors.accent.withValues(alpha: .45),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        widget.isAdmin
+                            ? Icons.admin_panel_settings_outlined
+                            : Icons.person_outline,
+                        size: 14,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Text(
+                          accountLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: .2,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -327,17 +363,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
         final items = List<Map<String, dynamic>>.from(
           loan['loan_items'] as List? ?? const [],
         );
-        final openItems = items.where(
-          (item) => item['returned_at'] == null && item['resolved_at'] == null,
-        );
+        final openItems = items.where(isLoanItemOpen);
         if (openItems.isEmpty) continue;
         activeLoans++;
-        if (openItems.any(
-          (item) =>
-              DateTime.tryParse(item['due_at'] as String? ?? '')
-                  ?.isBefore(DateTime.now()) ==
-              true,
-        )) {
+        if (openItems.any(isLoanItemOverdue)) {
           overdue++;
         }
       }
@@ -353,7 +382,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
     );
   }
 
-  void _refresh() => setState(() => _data = _load());
+  void _refresh() {
+    final next = _load();
+    setState(() {
+      _data = next;
+    });
+  }
 
   @override
   Widget build(BuildContext context) => FutureBuilder<_AdminDashboardData>(
@@ -1145,7 +1179,7 @@ class _BookActions extends StatelessWidget {
             leading: const Icon(Icons.add_box_outlined),
             title: const Text('Tambah eksemplar dengan kode sendiri'),
             onTap: () async {
-              final code = await _textDialog(
+              final code = await showTextDialog(
                 context,
                 'Kode QR buku',
                 'Contoh: BK-001',
@@ -1276,6 +1310,7 @@ class _InventoryPageState extends State<InventoryPage> {
   late Future<List<Map<String, dynamic>>> _copies;
   String _query = '';
   String _statusFilter = 'Semua';
+  String _categoryFilter = 'Semua';
   int _page = 0;
 
   @override
@@ -1294,7 +1329,7 @@ class _InventoryPageState extends State<InventoryPage> {
       List<Map<String, dynamic>>.from(
         await Supabase.instance.client
             .from('book_copies')
-            .select('id,code,status,archived_at,books(title)')
+            .select('id,code,status,archived_at,books(title,category)')
             .order('code'),
       );
   void _refresh() {
@@ -1304,205 +1339,354 @@ class _InventoryPageState extends State<InventoryPage> {
     });
   }
 
+  Future<void> _printCategoryQrs(
+    BuildContext context, {
+    required String category,
+    required List<Map<String, dynamic>> copies,
+  }) async {
+    if (copies.isEmpty) {
+      _snack(context, 'Belum ada QR aktif pada kategori ini.');
+      return;
+    }
+    final paper = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Ukuran kertas cetak QR'),
+        children: [
+          for (final size in const ['A4', 'F4'])
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, size),
+              child: Text(size),
+            ),
+        ],
+      ),
+    );
+    if (paper == null || !context.mounted) return;
+
+    try {
+      final pageFormat = paper == 'A4'
+          ? PdfPageFormat.a4
+          : PdfPageFormat(215 * PdfPageFormat.mm, 330 * PdfPageFormat.mm);
+      final document = pw.Document();
+      document.addPage(
+        pw.MultiPage(
+          pageFormat: pageFormat,
+          margin: const pw.EdgeInsets.all(24),
+          header: (_) => pw.Padding(
+            padding: const pw.EdgeInsets.only(bottom: 12),
+            child: pw.Text(
+              'QR Buku · $category · ${copies.length} buku',
+              style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
+            ),
+          ),
+          build: (_) => [
+            pw.Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [for (final copy in copies) _qrPrintLabel(copy)],
+            ),
+          ],
+        ),
+      );
+      final safeCategory = category.replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '-');
+      await Printing.layoutPdf(
+        name: 'qr-$safeCategory-$paper.pdf',
+        onLayout: (_) => document.save(),
+      );
+    } catch (error) {
+      if (context.mounted) _snack(context, _friendlyError(error));
+    }
+  }
+
+  pw.Widget _qrPrintLabel(Map<String, dynamic> copy) {
+    final book = copy['books'] as Map<String, dynamic>?;
+    final code = copy['code'] as String? ?? '';
+    return pw.Container(
+      width: 166,
+      height: 170,
+      padding: const pw.EdgeInsets.all(8),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey600, width: .6),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+      ),
+      child: pw.Column(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(
+            book?['title'] as String? ?? 'Buku',
+            maxLines: 2,
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.BarcodeWidget(
+            barcode: pw.Barcode.qrCode(),
+            data: code,
+            width: 92,
+            height: 92,
+          ),
+          pw.Text(code, style: const pw.TextStyle(fontSize: 9)),
+        ],
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) =>
-      FutureBuilder<List<Map<String, dynamic>>>(
-        future: _copies,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return _LoadError(error: snapshot.error, retry: _refresh);
-          }
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final copies = snapshot.data!
-              .where((copy) => copy['archived_at'] == null)
-              .toList();
-          final counts = <String, int>{};
-          for (final copy in copies) {
-            final status = copy['status'] as String? ?? 'unknown';
-            counts[status] = (counts[status] ?? 0) + 1;
-          }
-          final query = _query.trim().toLowerCase();
-          final visibleCopies = copies.where((copy) {
-            final status = copy['status'] as String? ?? 'unknown';
-            final book = copy['books'] as Map<String, dynamic>?;
-            final matchesStatus =
-                _statusFilter == 'Semua' || _status(status) == _statusFilter;
-            final matchesQuery =
-                query.isEmpty ||
-                (copy['code'] as String? ?? '').toLowerCase().contains(query) ||
-                (book?['title'] as String? ?? '').toLowerCase().contains(query);
-            return matchesStatus && matchesQuery;
-          }).toList();
-          final pageCount = visibleCopies.isEmpty
-              ? 1
-              : (visibleCopies.length + _pageSize - 1) ~/ _pageSize;
-          final currentPage = _page >= pageCount ? pageCount - 1 : _page;
-          final pageCopies = visibleCopies
-              .skip(currentPage * _pageSize)
-              .take(_pageSize);
-          return RefreshIndicator(
-            onRefresh: () async => _refresh(),
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+  Widget build(
+    BuildContext context,
+  ) => FutureBuilder<List<Map<String, dynamic>>>(
+    future: _copies,
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return _LoadError(error: snapshot.error, retry: _refresh);
+      }
+      if (!snapshot.hasData) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      final copies = snapshot.data!
+          .where((copy) => copy['archived_at'] == null)
+          .toList();
+      final counts = <String, int>{};
+      for (final copy in copies) {
+        final status = copy['status'] as String? ?? 'unknown';
+        counts[status] = (counts[status] ?? 0) + 1;
+      }
+      final query = _query.trim().toLowerCase();
+      final categories =
+          copies
+              .map((copy) => _copyCategory(copy))
+              .where((category) => category.isNotEmpty)
+              .toSet()
+              .toList()
+            ..sort();
+      final selectedCategory = categories.contains(_categoryFilter)
+          ? _categoryFilter
+          : 'Semua';
+      final visibleCopies = copies.where((copy) {
+        final status = copy['status'] as String? ?? 'unknown';
+        final book = copy['books'] as Map<String, dynamic>?;
+        final matchesStatus =
+            _statusFilter == 'Semua' || _status(status) == _statusFilter;
+        final matchesCategory =
+            selectedCategory == 'Semua' ||
+            _copyCategory(copy) == selectedCategory;
+        final matchesQuery =
+            query.isEmpty ||
+            (copy['code'] as String? ?? '').toLowerCase().contains(query) ||
+            (book?['title'] as String? ?? '').toLowerCase().contains(query);
+        return matchesStatus && matchesCategory && matchesQuery;
+      }).toList();
+      final pageCount = visibleCopies.isEmpty
+          ? 1
+          : (visibleCopies.length + _pageSize - 1) ~/ _pageSize;
+      final currentPage = _page >= pageCount ? pageCount - 1 : _page;
+      final pageCopies = visibleCopies
+          .skip(currentPage * _pageSize)
+          .take(_pageSize);
+      return RefreshIndicator(
+        onRefresh: () async => _refresh(),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          children: [
+            Text(
+              'Inventaris',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Kelola QR buku, ketersediaan stok, dan kondisinya.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            Row(
               children: [
-                Text(
-                  'Inventaris',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Kelola QR buku, ketersediaan stok, dan kondisinya.',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _InventoryMetric(
-                        label: 'Total aktif',
-                        count: copies.length,
-                        icon: Icons.inventory_2_outlined,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _InventoryMetric(
-                        label: 'Tersedia',
-                        count: counts['available'] ?? 0,
-                        icon: Icons.check_circle_outline,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _InventoryMetric(
-                        label: 'Dipinjam',
-                        count: counts['borrowed'] ?? 0,
-                        icon: Icons.menu_book_outlined,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _InventoryMetric(
-                        label: 'Rusak / hilang',
-                        count: (counts['damaged'] ?? 0) + (counts['lost'] ?? 0),
-                        icon: Icons.report_outlined,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                TextField(
-                  controller: _search,
-                  onChanged: (value) => setState(() {
-                    _query = value;
-                    _page = 0;
-                  }),
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search),
-                    hintText: 'Cari kode QR atau judul buku',
-                    suffixIcon: _query.isEmpty
-                        ? null
-                        : IconButton(
-                            tooltip: 'Hapus pencarian',
-                            onPressed: () {
-                              _search.clear();
-                              setState(() {
-                                _query = '';
-                                _page = 0;
-                              });
-                            },
-                            icon: const Icon(Icons.close),
-                          ),
+                Expanded(
+                  child: _InventoryMetric(
+                    label: 'Total aktif',
+                    count: copies.length,
+                    icon: Icons.inventory_2_outlined,
                   ),
                 ),
-                const SizedBox(height: 12),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      for (final label in const [
-                        'Semua',
-                        'Tersedia',
-                        'Dipinjam',
-                        'Rusak',
-                        'Hilang',
-                      ]) ...[
-                        if (label != 'Semua') const SizedBox(width: 8),
-                        ChoiceChip(
-                          label: Text(label),
-                          selected: _statusFilter == label,
-                          onSelected: (_) => setState(() {
-                            _statusFilter = label;
-                            _page = 0;
-                          }),
-                        ),
-                      ],
-                    ],
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _InventoryMetric(
+                    label: 'Tersedia',
+                    count: counts['available'] ?? 0,
+                    icon: Icons.check_circle_outline,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  '${visibleCopies.length} QR buku',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 6),
-                if (visibleCopies.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 36),
-                    child: Column(
-                      children: [
-                        Icon(Icons.inventory_2_outlined, size: 42),
-                        SizedBox(height: 8),
-                        Text('Tidak ada QR buku yang cocok.'),
-                      ],
-                    ),
-                  )
-                else
-                  for (final copy in pageCopies) ...[
-                    _InventoryCopyCard(
-                      copy: copy,
-                      onTap: () => _showCopyQr(context, copy),
-                      onArchive: copy['status'] == 'available'
-                          ? () => _archiveCopy(context, copy)
-                          : null,
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                if (visibleCopies.length > _pageSize) ...[
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      IconButton.outlined(
-                        tooltip: 'Halaman sebelumnya',
-                        onPressed: currentPage == 0
-                            ? null
-                            : () => setState(() => _page = currentPage - 1),
-                        icon: const Icon(Icons.chevron_left),
-                      ),
-                      Text('Halaman ${currentPage + 1} dari $pageCount'),
-                      IconButton.outlined(
-                        tooltip: 'Halaman berikutnya',
-                        onPressed: currentPage + 1 >= pageCount
-                            ? null
-                            : () => setState(() => _page = currentPage + 1),
-                        icon: const Icon(Icons.chevron_right),
-                      ),
-                    ],
-                  ),
-                ],
               ],
             ),
-          );
-        },
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _InventoryMetric(
+                    label: 'Dipinjam',
+                    count: counts['borrowed'] ?? 0,
+                    icon: Icons.menu_book_outlined,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _InventoryMetric(
+                    label: 'Rusak / hilang',
+                    count: (counts['damaged'] ?? 0) + (counts['lost'] ?? 0),
+                    icon: Icons.report_outlined,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            TextField(
+              controller: _search,
+              onChanged: (value) => setState(() {
+                _query = value;
+                _page = 0;
+              }),
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search),
+                hintText: 'Cari kode QR atau judul buku',
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Hapus pencarian',
+                        onPressed: () {
+                          _search.clear();
+                          setState(() {
+                            _query = '';
+                            _page = 0;
+                          });
+                        },
+                        icon: const Icon(Icons.close),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final label in const [
+                    'Semua',
+                    'Tersedia',
+                    'Dipinjam',
+                    'Rusak',
+                    'Hilang',
+                  ]) ...[
+                    if (label != 'Semua') const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: Text(label),
+                      selected: _statusFilter == label,
+                      onSelected: (_) => setState(() {
+                        _statusFilter = label;
+                        _page = 0;
+                      }),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: selectedCategory,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Kategori buku',
+                prefixIcon: Icon(Icons.category_outlined),
+              ),
+              items: [
+                const DropdownMenuItem(
+                  value: 'Semua',
+                  child: Text('Semua kategori'),
+                ),
+                for (final category in categories)
+                  DropdownMenuItem(
+                    value: category,
+                    child: Text(category, overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+              onChanged: (value) => setState(() {
+                _categoryFilter = value ?? 'Semua';
+                _page = 0;
+              }),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: selectedCategory == 'Semua'
+                  ? null
+                  : () => _printCategoryQrs(
+                      context,
+                      category: selectedCategory,
+                      copies: copies
+                          .where(
+                            (copy) => _copyCategory(copy) == selectedCategory,
+                          )
+                          .toList(),
+                    ),
+              icon: const Icon(Icons.print_outlined),
+              label: Text(
+                selectedCategory == 'Semua'
+                    ? 'Pilih kategori untuk cetak QR'
+                    : 'Cetak semua QR · ${copies.where((copy) => _copyCategory(copy) == selectedCategory).length}',
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${visibleCopies.length} QR buku',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 6),
+            if (visibleCopies.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 36),
+                child: Column(
+                  children: [
+                    Icon(Icons.inventory_2_outlined, size: 42),
+                    SizedBox(height: 8),
+                    Text('Tidak ada QR buku yang cocok.'),
+                  ],
+                ),
+              )
+            else
+              for (final copy in pageCopies) ...[
+                _InventoryCopyCard(
+                  copy: copy,
+                  onTap: () => _showCopyQr(context, copy),
+                  onArchive: copy['status'] == 'available'
+                      ? () => _archiveCopy(context, copy)
+                      : null,
+                ),
+                const SizedBox(height: 8),
+              ],
+            if (visibleCopies.length > _pageSize) ...[
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton.outlined(
+                    tooltip: 'Halaman sebelumnya',
+                    onPressed: currentPage == 0
+                        ? null
+                        : () => setState(() => _page = currentPage - 1),
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                  Text('Halaman ${currentPage + 1} dari $pageCount'),
+                  IconButton.outlined(
+                    tooltip: 'Halaman berikutnya',
+                    onPressed: currentPage + 1 >= pageCount
+                        ? null
+                        : () => setState(() => _page = currentPage + 1),
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
       );
+    },
+  );
 
   Future<void> _archiveCopy(
     BuildContext context,
@@ -1729,13 +1913,7 @@ class _MemberQrScanPageState extends State<MemberQrScanPage> {
     });
     await _controller.stop();
     try {
-      final result = await Supabase.instance.client
-          .from('book_copies')
-          .select(
-            'id,code,status,archived_at,books(id,title,author,category,cover_path,archived_at)',
-          )
-          .eq('code', code)
-          .maybeSingle();
+      final result = await _fetchCopyByCode(code);
       if (!mounted) return;
       final book = result?['books'] as Map<String, dynamic>?;
       if (result == null ||
@@ -1761,6 +1939,15 @@ class _MemberQrScanPageState extends State<MemberQrScanPage> {
     }
   }
 
+  Future<Map<String, dynamic>?> _fetchCopyByCode(String code) async =>
+      await Supabase.instance.client
+          .from('book_copies')
+          .select(
+            'id,code,status,archived_at,books(id,title,author,category,cover_path,archived_at)',
+          )
+          .eq('code', code)
+          .maybeSingle();
+
   Future<void> _scanAgain() async {
     setState(() {
       _lookingUp = false;
@@ -1771,19 +1958,23 @@ class _MemberQrScanPageState extends State<MemberQrScanPage> {
   }
 
   @override
-  Widget build(BuildContext context) => ListView(
+  Widget build(BuildContext context) {
+    final copy = _copy;
+    if (copy != null) return _buildScanResult(context, copy);
+    return _buildScanner(context);
+  }
+
+  Widget _buildScanner(BuildContext context) => ListView(
     padding: const EdgeInsets.all(16),
     children: [
       Text('Scan buku', style: Theme.of(context).textTheme.headlineMedium),
       const SizedBox(height: 4),
-      const Text(
-        'Arahkan kamera ke QR eksemplar untuk memeriksa ketersediaannya.',
-      ),
+      const Text('Arahkan kamera ke QR buku untuk memeriksa ketersediaannya.'),
       const SizedBox(height: 16),
       ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: AspectRatio(
-          aspectRatio: _copy == null ? 1 : 1.6,
+          aspectRatio: 1,
           child: MobileScanner(
             controller: _controller,
             onDetect: _onDetect,
@@ -1811,72 +2002,155 @@ class _MemberQrScanPageState extends State<MemberQrScanPage> {
             child: Text(_message!),
           ),
         ),
-      ],
-      if (_copy case final copy?) ...[
-        const SizedBox(height: 16),
-        Center(
-          child: PerpusBookCover(
-            bookId:
-                ((copy['books'] as Map<String, dynamic>?)?['id'] as String?) ??
-                copy['code'] as String,
-            code: copy['code'] as String? ?? 'BUKU',
-            width: 112,
-            height: 150,
-            imageUrl: _bookCoverUrl(copy['books'] as Map<String, dynamic>?),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: ListTile(
-            leading: Icon(
-              copy['status'] == 'available'
-                  ? Icons.check_circle_outline
-                  : Icons.info_outline,
-            ),
-            title: Text(
-              (copy['books'] as Map<String, dynamic>?)?['title'] as String? ??
-                  'Buku',
-            ),
-            subtitle: Text(
-              '${(copy['books'] as Map<String, dynamic>?)?['category'] ?? 'Buku'} · Kode ${copy['code']} · ${_status(copy['status'] as String? ?? '')}',
-            ),
-            trailing: Icon(
-              copy['status'] == 'available'
-                  ? Icons.check_circle_outline
-                  : Icons.info_outline,
-            ),
-          ),
-        ),
         const SizedBox(height: 8),
-        Text(
-          copy['status'] == 'available'
-              ? 'Buku tersedia. Pengajuan peminjaman mengikuti proses persetujuan pengurus.'
-              : 'Buku ini belum tersedia untuk dipinjam.',
-          textAlign: TextAlign.center,
-        ),
-        if (copy['status'] == 'available') ...[
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: () => Navigator.of(context).push<void>(
-              MaterialPageRoute(
-                builder: (_) => MemberLoanRequestPage(copy: copy),
-              ),
-            ),
-            icon: const Icon(Icons.add_shopping_cart_outlined),
-            label: const Text('Ajukan pinjaman'),
-          ),
-        ],
-      ],
-      if (_lookingUp || _message != null || _copy != null) ...[
-        const SizedBox(height: 16),
         OutlinedButton.icon(
           onPressed: _scanAgain,
           icon: const Icon(Icons.qr_code_scanner),
-          label: const Text('Scan buku lain'),
+          label: const Text('Coba scan lagi'),
         ),
       ],
     ],
   );
+
+  Widget _buildScanResult(BuildContext context, Map<String, dynamic> copy) {
+    final book = copy['books'] as Map<String, dynamic>?;
+    final isAvailable = copy['status'] == 'available';
+    final title = book?['title'] as String? ?? 'Buku';
+    final statusColor = isAvailable
+        ? Colors.green.shade700
+        : Colors.orange.shade800;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: 'Kembali ke kamera',
+                onPressed: _scanAgain,
+                icon: const Icon(Icons.arrow_back),
+              ),
+              Expanded(
+                child: Text(
+                  'Hasil scan',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    PerpusBookCover(
+                      bookId: book?['id'] as String? ?? copy['code'] as String,
+                      code: copy['code'] as String? ?? 'BUKU',
+                      width: 148,
+                      height: 196,
+                      imageUrl: _bookCoverUrl(book),
+                    ),
+                    const SizedBox(height: 18),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Text(
+                              title,
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${book?['category'] ?? 'Buku'} · Kode ${copy['code']}',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 7,
+                              ),
+                              decoration: BoxDecoration(
+                                color: statusColor.withValues(alpha: .10),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                _status(copy['status'] as String? ?? ''),
+                                style: TextStyle(
+                                  color: statusColor,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              isAvailable
+                                  ? 'Buku tersedia. Ajukan pinjaman, lalu serahkan buku kepada pengurus untuk diperiksa sebelum dibawa.'
+                                  : 'Buku ini belum tersedia untuk dipinjam.',
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (isAvailable)
+                FilledButton.icon(
+                  onPressed: () => _openLoanRequest(copy),
+                  icon: const Icon(Icons.add_shopping_cart_outlined),
+                  label: const Text('Ajukan pinjaman'),
+                ),
+              if (isAvailable) const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _scanAgain,
+                icon: const Icon(Icons.qr_code_scanner),
+                label: const Text('Scan buku lain'),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openLoanRequest(Map<String, dynamic> copy) async {
+    final completed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => MemberLoanRequestPage(copy: copy)),
+    );
+    if (!mounted || completed != true) return;
+
+    try {
+      final refreshed = await _fetchCopyByCode(copy['code'] as String);
+      if (mounted && refreshed != null) setState(() => _copy = refreshed);
+    } catch (_) {
+      if (mounted) {
+        _snack(
+          context,
+          'Pengajuan terkirim, tetapi status QR gagal dimuat ulang. Periksa pengajuan di menu Pinjaman.',
+        );
+      }
+    }
+  }
 }
 
 class MemberLoanRequestPage extends StatefulWidget {
@@ -1889,63 +2163,108 @@ class MemberLoanRequestPage extends StatefulWidget {
 
 class _MemberLoanRequestPageState extends State<MemberLoanRequestPage> {
   final _picker = ImagePicker();
+  final _faceDetector = FaceDetector(
+    options: FaceDetectorOptions(performanceMode: FaceDetectorMode.accurate),
+  );
   XFile? _photo;
-  String _method = 'selfie';
+  String? _method;
+  String? _requestKey;
+  String? _uploadedEvidencePath;
   bool _saving = false;
+  bool _checkingPhoto = false;
 
   Future<void> _takePhoto() async {
+    if (_saving || _checkingPhoto || _method == null) return;
+    setState(() => _checkingPhoto = true);
     try {
       final photo = await _picker.pickImage(
         source: ImageSource.camera,
         imageQuality: 82,
         maxWidth: 1800,
       );
-      if (photo != null && mounted) setState(() => _photo = photo);
+      if (photo == null || !mounted) return;
+      setState(() {
+        _photo = null;
+        _requestKey = null;
+        _uploadedEvidencePath = null;
+      });
+      final faces = await _faceDetector.processImage(
+        InputImage.fromFilePath(photo.path),
+      );
+      if (!mounted) return;
+      if (faces.isEmpty) {
+        _snack(context, 'Foto bukti harus menampilkan wajah dengan jelas.');
+        return;
+      }
+      setState(() {
+        _photo = photo;
+        _requestKey = null;
+        _uploadedEvidencePath = null;
+      });
     } catch (error) {
       if (mounted) _snack(context, _friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _checkingPhoto = false);
     }
   }
 
   Future<void> _submit() async {
+    if (_saving || _checkingPhoto) return;
     final client = Supabase.instance.client;
     final user = client.auth.currentUser;
     final photo = _photo;
-    if (user == null || photo == null) {
-      _snack(context, 'Ambil foto selfie atau kartu siswa sebagai bukti.');
+    final method = _method;
+    if (user == null || photo == null || method == null) {
+      _snack(
+        context,
+        'Pilih jenis bukti dan ambil foto yang menampilkan wajah.',
+      );
       return;
     }
     setState(() => _saving = true);
-    final key = _newRequestUuid();
+    final key = _requestKey ??= _newRequestUuid();
     final ext = photo.name.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
-    final path = '${user.id}/$key.$ext';
+    final path = _uploadedEvidencePath ?? '${user.id}/$key.$ext';
     try {
-      await client.storage
-          .from('loan-evidence')
-          .uploadBinary(
-            path,
-            await photo.readAsBytes(),
-            fileOptions: FileOptions(
-              contentType: ext == 'png' ? 'image/png' : 'image/jpeg',
-              upsert: false,
-            ),
-          );
+      if (_uploadedEvidencePath == null) {
+        await client.storage
+            .from('loan-evidence')
+            .uploadBinary(
+              path,
+              await photo.readAsBytes(),
+              fileOptions: FileOptions(
+                contentType: ext == 'png' ? 'image/png' : 'image/jpeg',
+                upsert: false,
+              ),
+            );
+        _uploadedEvidencePath = path;
+      }
       await client.rpc(
         'submit_loan_request',
         params: {
           'p_idempotency_key': key,
           'p_copy_ids': [widget.copy['id']],
-          'p_evidence_method': _method,
+          'p_evidence_method': method,
           'p_evidence_path': path,
         },
       );
       if (!mounted) return;
-      _snack(context, 'Pengajuan terkirim. Tunggu persetujuan pengurus.');
-      Navigator.of(context).pop();
+      _snack(
+        context,
+        'Pengajuan terkirim. Tunggu persetujuan pengurus sebelum membawa buku.',
+      );
+      Navigator.of(context).pop(true);
     } catch (error) {
       if (mounted) _snack(context, _friendlyError(error));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_faceDetector.close());
+    super.dispose();
   }
 
   @override
@@ -1975,26 +2294,63 @@ class _MemberLoanRequestPageState extends State<MemberLoanRequestPage> {
               ),
             ),
             const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: _method,
-              decoration: const InputDecoration(labelText: 'Jenis bukti'),
-              items: const [
-                DropdownMenuItem(value: 'selfie', child: Text('Selfie')),
-                DropdownMenuItem(
-                  value: 'student_card',
-                  child: Text('Foto kartu siswa'),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Jenis bukti',
+                style: Theme.of(context).textTheme.titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Pilih jenis foto yang akan dikirim.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                ChoiceChip(
+                  avatar: const Icon(Icons.face_outlined, size: 18),
+                  label: const Text('Selfie'),
+                  selected: _method == 'selfie',
+                  onSelected:
+                      _saving || _checkingPhoto || _uploadedEvidencePath != null
+                      ? null
+                      : (_) => setState(() => _method = 'selfie'),
+                ),
+                ChoiceChip(
+                  avatar: const Icon(Icons.badge_outlined, size: 18),
+                  label: const Text('Kartu siswa'),
+                  selected: _method == 'student_card',
+                  onSelected:
+                      _saving || _checkingPhoto || _uploadedEvidencePath != null
+                      ? null
+                      : (_) => setState(() => _method = 'student_card'),
                 ),
               ],
-              onChanged: _saving
-                  ? null
-                  : (value) => setState(() => _method = value ?? 'selfie'),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             OutlinedButton.icon(
-              onPressed: _saving ? null : _takePhoto,
-              icon: const Icon(Icons.camera_alt_outlined),
+              onPressed: _saving || _checkingPhoto || _method == null
+                  ? null
+                  : _takePhoto,
+              icon: _checkingPhoto
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.camera_alt_outlined),
               label: Text(
-                _photo == null ? 'Ambil foto bukti' : 'Ambil ulang foto',
+                _checkingPhoto
+                    ? 'Memeriksa foto…'
+                    : _method == null
+                    ? 'Pilih jenis bukti terlebih dahulu'
+                    : _photo == null
+                    ? 'Ambil foto bukti'
+                    : 'Ambil ulang foto',
               ),
             ),
             if (_photo != null) ...[
@@ -2015,7 +2371,10 @@ class _MemberLoanRequestPageState extends State<MemberLoanRequestPage> {
             ],
             const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: _saving ? null : _submit,
+              onPressed:
+                  _saving || _checkingPhoto || _photo == null || _method == null
+                  ? null
+                  : _submit,
               icon: _saving
                   ? const SizedBox(
                       width: 18,
@@ -2023,11 +2382,11 @@ class _MemberLoanRequestPageState extends State<MemberLoanRequestPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.send_outlined),
-              label: Text(_saving ? 'Mengirim…' : 'Kirim pengajuan'),
+              label: Text(_saving ? 'Mengirim…' : 'Ajukan pinjaman'),
             ),
             const SizedBox(height: 8),
             Text(
-              'Pengajuan baru tercatat setelah foto berhasil diunggah. Ketersediaan buku diperiksa kembali oleh server saat disetujui.',
+              'Pengajuan menunggu pemeriksaan siswa dan buku oleh pengurus. Stok berkurang setelah pengurus menyetujui dan menyerahkan buku.',
               style: Theme.of(context).textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),
@@ -2632,15 +2991,15 @@ class _StaffAdminPanelState extends State<_StaffAdminPanel> {
   );
 
   Future<void> _createInvite(BuildContext context) async {
-    final email = await _textDialog(
+    final email = await showTextDialog(
       context,
       'Email pengurus',
-      'nama@email.com',
+      'Email penerima undangan',
     );
     if (email == null || email.trim().isEmpty || !context.mounted) return;
-    final name = await _textDialog(context, 'Nama pengurus', 'Nama lengkap');
+    final name = await showTextDialog(context, 'Nama pengurus', 'Nama lengkap');
     if (name == null || name.trim().isEmpty || !context.mounted) return;
-    final position = await _textDialog(
+    final position = await showTextDialog(
       context,
       'Jabatan',
       'Pengurus Perpustakaan',
@@ -3025,7 +3384,7 @@ class _PendingMemberCard extends StatelessWidget {
   ) async {
     var reason = '';
     if (!approve) {
-      final result = await _textDialog(
+      final result = await showTextDialog(
         context,
         'Alasan penolakan',
         'Tuliskan alasan',
@@ -3274,133 +3633,119 @@ class _MemberLoansPageState extends State<MemberLoansPage> {
       final loans = snapshot.data!;
       return RefreshIndicator(
         onRefresh: () async => _refresh(),
-        child: loans.isEmpty
-            ? ListView(
-                children: const [
-                  SizedBox(height: 100),
-                  Center(child: Text('Belum ada pinjaman.')),
-                ],
-              )
-            : ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  Text(
-                    'Riwayat pinjaman',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  const _MemberLoanRequestsPanel(),
-                  for (final loan in loans)
-                    ...List<Map<String, dynamic>>.from(
-                      loan['loan_items'] as List? ?? const [],
-                    ).map((item) {
-                      final copy = item['book_copies'] as Map<String, dynamic>?;
-                      final book = copy?['books'] as Map<String, dynamic>?;
-                      final returned = item['returned_at'] != null;
-                      final resolved = item['resolved_at'] != null;
-                      final overdue =
-                          !returned &&
-                          !resolved &&
-                          DateTime.tryParse(item['due_at'] as String? ?? '')
-                                  ?.isBefore(DateTime.now()) ==
-                              true;
-                      final returnRequest =
-                          item['return_requests'] as Map<String, dynamic>?;
-                      final losses = List<Map<String, dynamic>>.from(
-                        item['loss_reports'] as List? ?? const [],
-                      );
-                      final loss = losses.isEmpty ? null : losses.first;
-                      final pendingReturn =
-                          returnRequest != null &&
-                          [
-                            'pending',
-                            'partial',
-                          ].contains(returnRequest['status']);
-                      final pendingLoss =
-                          loss != null &&
-                          ['reported', 'verified'].contains(loss['status']);
-                      return Card(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(
+              'Riwayat pinjaman',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 8),
+            const _MemberLoanRequestsPanel(),
+            if (loans.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 48),
+                child: Center(child: Text('Belum ada pinjaman.')),
+              ),
+            for (final loan in loans)
+              ...List<Map<String, dynamic>>.from(
+                loan['loan_items'] as List? ?? const [],
+              ).map((item) {
+                final copy = item['book_copies'] as Map<String, dynamic>?;
+                final book = copy?['books'] as Map<String, dynamic>?;
+                final returned = item['returned_at'] != null;
+                final resolved = item['resolved_at'] != null;
+                final overdue = isLoanItemOverdue(item);
+                final returnRequest =
+                    item['return_requests'] as Map<String, dynamic>?;
+                final losses = List<Map<String, dynamic>>.from(
+                  item['loss_reports'] as List? ?? const [],
+                );
+                final loss = losses.isEmpty ? null : losses.first;
+                final pendingReturn =
+                    returnRequest != null &&
+                    ['pending', 'partial'].contains(returnRequest['status']);
+                final pendingLoss =
+                    loss != null &&
+                    ['reported', 'verified'].contains(loss['status']);
+                return Card(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        leading: PerpusBookCover(
+                          bookId:
+                              book?['id'] as String? ??
+                              copy?['code'] as String? ??
+                              'book',
+                          code: copy?['code'] as String? ?? 'BUKU',
+                          width: 42,
+                          height: 58,
+                          imageUrl: _bookCoverUrl(book),
+                        ),
+                        title: Text(book?['title'] as String? ?? 'Buku'),
+                        subtitle: Text(
+                          '${book?['category'] ?? 'Buku'} · QR ${copy?['code'] ?? '—'} · Jatuh tempo ${_date(item['due_at'])}',
+                        ),
+                        trailing: Text(
+                          returned
+                              ? 'Kembali'
+                              : resolved
+                              ? 'Selesai'
+                              : overdue
+                              ? 'Terlambat'
+                              : 'Dipinjam',
+                        ),
+                      ),
+                      if (!returned && !resolved)
+                        Wrap(
+                          alignment: WrapAlignment.end,
+                          spacing: 4,
                           children: [
-                            ListTile(
-                              leading: PerpusBookCover(
-                                bookId:
-                                    book?['id'] as String? ??
-                                    copy?['code'] as String? ??
-                                    'book',
-                                code: copy?['code'] as String? ?? 'BUKU',
-                                width: 42,
-                                height: 58,
-                                imageUrl: _bookCoverUrl(book),
+                            if (pendingReturn)
+                              TextButton.icon(
+                                onPressed: () => _cancelReturn(
+                                  context,
+                                  returnRequest['id'] as String,
+                                ),
+                                icon: const Icon(Icons.undo),
+                                label: const Text('Batalkan pengembalian'),
+                              )
+                            else if (!pendingLoss)
+                              TextButton.icon(
+                                onPressed: () => _requestReturn(
+                                  context,
+                                  item['id'] as String,
+                                ),
+                                icon: const Icon(
+                                  Icons.assignment_return_outlined,
+                                ),
+                                label: const Text('Ajukan pengembalian'),
                               ),
-                              title: Text(book?['title'] as String? ?? 'Buku'),
-                              subtitle: Text(
-                                '${book?['category'] ?? 'Buku'} · QR ${copy?['code'] ?? '—'} · Jatuh tempo ${_date(item['due_at'])}',
+                            if (!pendingReturn && !pendingLoss)
+                              TextButton.icon(
+                                onPressed: () =>
+                                    _reportLoss(context, item['id'] as String),
+                                icon: const Icon(
+                                  Icons.report_gmailerrorred_outlined,
+                                ),
+                                label: const Text('Laporkan hilang'),
                               ),
-                              trailing: Text(
-                                returned
-                                    ? 'Kembali'
-                                    : resolved
-                                    ? 'Selesai'
-                                    : overdue
-                                    ? 'Terlambat'
-                                    : 'Dipinjam',
-                              ),
-                            ),
-                            if (!returned && !resolved)
-                              Wrap(
-                                alignment: WrapAlignment.end,
-                                spacing: 4,
-                                children: [
-                                  if (pendingReturn)
-                                    TextButton.icon(
-                                      onPressed: () => _cancelReturn(
-                                        context,
-                                        returnRequest['id'] as String,
-                                      ),
-                                      icon: const Icon(Icons.undo),
-                                      label: const Text(
-                                        'Batalkan pengembalian',
-                                      ),
-                                    )
-                                  else if (!pendingLoss)
-                                    TextButton.icon(
-                                      onPressed: () => _requestReturn(
-                                        context,
-                                        item['id'] as String,
-                                      ),
-                                      icon: const Icon(
-                                        Icons.assignment_return_outlined,
-                                      ),
-                                      label: const Text('Ajukan pengembalian'),
-                                    ),
-                                  if (!pendingReturn && !pendingLoss)
-                                    TextButton.icon(
-                                      onPressed: () => _reportLoss(
-                                        context,
-                                        item['id'] as String,
-                                      ),
-                                      icon: const Icon(
-                                        Icons.report_gmailerrorred_outlined,
-                                      ),
-                                      label: const Text('Laporkan hilang'),
-                                    ),
-                                  if (loss != null)
-                                    Padding(
-                                      padding: const EdgeInsets.all(8),
-                                      child: Text(
-                                        'Laporan kehilangan: ${_status(loss['status'] as String? ?? '')}',
-                                      ),
-                                    ),
-                                ],
+                            if (loss != null)
+                              Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Text(
+                                  'Laporan kehilangan: ${_status(loss['status'] as String? ?? '')}',
+                                ),
                               ),
                           ],
                         ),
-                      );
-                    }),
-                ],
-              ),
+                    ],
+                  ),
+                );
+              }),
+          ],
+        ),
       );
     },
   );
@@ -3439,7 +3784,7 @@ class _MemberLoansPageState extends State<MemberLoansPage> {
   }
 
   Future<void> _reportLoss(BuildContext context, String itemId) async {
-    final description = await _textDialog(
+    final description = await showTextDialog(
       context,
       'Laporan kehilangan',
       'Jelaskan kapan dan bagaimana buku hilang',
@@ -3547,6 +3892,7 @@ class _AdminCirculationPageState extends State<AdminCirculationPage> {
               ButtonSegment(value: 1, label: Text('Pengembalian')),
               ButtonSegment(value: 2, label: Text('Kehilangan')),
               ButtonSegment(value: 3, label: Text('Pembelajaran')),
+              ButtonSegment(value: 4, label: Text('Riwayat')),
             ],
             selected: {_section},
             onSelectionChanged: (selected) =>
@@ -3559,6 +3905,7 @@ class _AdminCirculationPageState extends State<AdminCirculationPage> {
           1 => const _AdminReturnsPage(),
           2 => const _AdminLossPage(),
           3 => const _AdminClassLoansPage(),
+          4 => const _AdminActivityHistoryPage(),
           _ => _buildRequests(context),
         },
       ),
@@ -3602,6 +3949,312 @@ class _AdminCirculationPageState extends State<AdminCirculationPage> {
       );
 }
 
+class _AdminActivityHistoryPage extends StatefulWidget {
+  const _AdminActivityHistoryPage();
+
+  @override
+  State<_AdminActivityHistoryPage> createState() =>
+      _AdminActivityHistoryPageState();
+}
+
+class _AdminActivityHistoryPageState extends State<_AdminActivityHistoryPage> {
+  late Future<Map<String, List<Map<String, dynamic>>>> _events;
+
+  @override
+  void initState() {
+    super.initState();
+    _events = _load();
+  }
+
+  Future<Map<String, List<Map<String, dynamic>>>> _load() async {
+    final client = Supabase.instance.client;
+    final results = await Future.wait([
+      client
+          .from('loans')
+          .select(
+            'id,member_id,approved_at,approval_mode,loan_items(id,due_at,returned_at,resolved_at,return_condition,book_copies(code,books(title)))',
+          )
+          .order('approved_at', ascending: false)
+          .limit(60),
+      client
+          .from('return_requests')
+          .select(
+            'id,member_id,status,created_at,return_request_items(status,received_condition,loan_items(book_copies(code,books(title))))',
+          )
+          .order('created_at', ascending: false)
+          .limit(60),
+      client
+          .from('loss_reports')
+          .select(
+            'id,member_id,status,created_at,resolved_at,loan_items(book_copies(code,books(title)))',
+          )
+          .order('created_at', ascending: false)
+          .limit(60),
+      client
+          .from('class_loan_sessions')
+          .select(
+            'id,responsible_name,class_name,activity,due_at,returned_at,created_at,class_loan_items(id,returned_at,return_condition,book_copies(code,books(title)))',
+          )
+          .order('created_at', ascending: false)
+          .limit(60),
+    ]);
+    final loans = List<Map<String, dynamic>>.from(results[0]);
+    final returns = List<Map<String, dynamic>>.from(results[1]);
+    final losses = List<Map<String, dynamic>>.from(results[2]);
+    final classes = List<Map<String, dynamic>>.from(results[3]);
+    final memberIds = <String>{
+      for (final row in loans) row['member_id'] as String,
+      for (final row in returns) row['member_id'] as String,
+      for (final row in losses) row['member_id'] as String,
+    }.toList();
+    if (memberIds.isNotEmpty) {
+      final profiles = List<Map<String, dynamic>>.from(
+        await client
+            .from('profiles')
+            .select('id,claimed_student_id')
+            .inFilter('id', memberIds),
+      );
+      final studentIds = profiles
+          .map((row) => row['claimed_student_id'] as String?)
+          .whereType<String>()
+          .toSet()
+          .toList();
+      final students = studentIds.isEmpty
+          ? <Map<String, dynamic>>[]
+          : List<Map<String, dynamic>>.from(
+              await client
+                  .from('student_registry')
+                  .select('id,full_name,class_name')
+                  .inFilter('id', studentIds),
+            );
+      final studentsById = {for (final row in students) row['id']: row};
+      final labels = {
+        for (final profile in profiles)
+          profile['id']:
+              '${studentsById[profile['claimed_student_id']]?['full_name'] ?? 'Anggota'} · ${studentsById[profile['claimed_student_id']]?['class_name'] ?? 'Kelas tidak diketahui'}',
+      };
+      for (final row in [...loans, ...returns, ...losses]) {
+        row['member_label'] = labels[row['member_id']] ?? 'Anggota';
+      }
+    }
+    return {
+      'loans': loans,
+      'returns': returns,
+      'losses': losses,
+      'classes': classes,
+    };
+  }
+
+  void _refresh() {
+    final next = _load();
+    setState(() {
+      _events = next;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder(
+    future: _events,
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return _LoadError(error: snapshot.error, retry: _refresh);
+      }
+      if (!snapshot.hasData) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      final data = snapshot.data!;
+      final loans = data['loans']!;
+      final returns = data['returns']!;
+      final losses = data['losses']!;
+      final classes = data['classes']!;
+      final hasEvents =
+          loans.isNotEmpty ||
+          returns.isNotEmpty ||
+          losses.isNotEmpty ||
+          classes.isNotEmpty;
+      return RefreshIndicator(
+        onRefresh: () async => _refresh(),
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(
+              'Riwayat aktivitas',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Peminjaman, pengembalian, kehilangan, dan pembelajaran.',
+            ),
+            if (!hasEvents)
+              const Padding(
+                padding: EdgeInsets.only(top: 48),
+                child: Center(child: Text('Belum ada aktivitas tercatat.')),
+              ),
+            if (loans.isNotEmpty) ...[
+              _historySectionTitle(context, 'Peminjaman', loans.length),
+              for (final row in loans) _loanHistoryCard(context, row),
+            ],
+            if (returns.isNotEmpty) ...[
+              _historySectionTitle(context, 'Pengembalian', returns.length),
+              for (final row in returns) _returnHistoryCard(context, row),
+            ],
+            if (losses.isNotEmpty) ...[
+              _historySectionTitle(context, 'Kehilangan', losses.length),
+              for (final row in losses) _lossHistoryCard(context, row),
+            ],
+            if (classes.isNotEmpty) ...[
+              _historySectionTitle(context, 'Pembelajaran', classes.length),
+              for (final row in classes) _classHistoryCard(context, row),
+            ],
+          ],
+        ),
+      );
+    },
+  );
+
+  Widget _historySectionTitle(BuildContext context, String title, int count) =>
+      Padding(
+        padding: const EdgeInsets.only(top: 18, bottom: 6),
+        child: Text(
+          '$title · $count',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+      );
+
+  Widget _loanHistoryCard(BuildContext context, Map<String, dynamic> row) {
+    final items = List<Map<String, dynamic>>.from(
+      row['loan_items'] as List? ?? const [],
+    );
+    final active = items
+        .where(
+          (item) => item['returned_at'] == null && item['resolved_at'] == null,
+        )
+        .length;
+    return _historyCard(
+      context,
+      title: 'Pinjaman · ${row['member_label'] ?? 'Anggota'}',
+      status: active == 0 ? 'Selesai' : '$active buku dipinjam',
+      subtitle: _date(row['approved_at']),
+      items: [
+        for (final item in items)
+          _historyBookLine(
+            item['book_copies'] as Map<String, dynamic>?,
+            item['returned_at'] != null
+                ? 'Dikembalikan · ${item['return_condition'] == 'damaged' ? 'rusak' : 'baik'}'
+                : item['resolved_at'] != null
+                ? 'Kewajiban selesai'
+                : 'Jatuh tempo ${_date(item['due_at'])}',
+          ),
+      ],
+    );
+  }
+
+  Widget _returnHistoryCard(BuildContext context, Map<String, dynamic> row) {
+    final items = List<Map<String, dynamic>>.from(
+      row['return_request_items'] as List? ?? const [],
+    );
+    return _historyCard(
+      context,
+      title: 'Pengembalian · ${row['member_label'] ?? 'Anggota'}',
+      status: _activityStatus(row['status'] as String? ?? ''),
+      subtitle: _date(row['created_at']),
+      items: [
+        for (final item in items)
+          _historyBookLine(
+            ((item['loan_items'] as Map<String, dynamic>?)?['book_copies'])
+                as Map<String, dynamic>?,
+            '${_activityStatus(item['status'] as String? ?? '')}${item['received_condition'] == null ? '' : ' · ${_activityStatus(item['received_condition'] as String)}'}',
+          ),
+      ],
+    );
+  }
+
+  Widget _lossHistoryCard(BuildContext context, Map<String, dynamic> row) {
+    final loanItem = row['loan_items'] as Map<String, dynamic>?;
+    return _historyCard(
+      context,
+      title: 'Kehilangan · ${row['member_label'] ?? 'Anggota'}',
+      status: _activityStatus(row['status'] as String? ?? ''),
+      subtitle: _date(row['created_at']),
+      items: [
+        _historyBookLine(
+          loanItem?['book_copies'] as Map<String, dynamic>?,
+          row['resolved_at'] == null ? 'Laporan buku hilang' : 'Diselesaikan',
+        ),
+      ],
+    );
+  }
+
+  Widget _classHistoryCard(BuildContext context, Map<String, dynamic> row) {
+    final items = List<Map<String, dynamic>>.from(
+      row['class_loan_items'] as List? ?? const [],
+    );
+    final active = items.where((item) => item['returned_at'] == null).length;
+    return _historyCard(
+      context,
+      title: '${row['class_name']} · ${row['activity']}',
+      status: active == 0 ? 'Selesai' : '$active buku dipinjam',
+      subtitle: '${row['responsible_name']} · ${_date(row['created_at'])}',
+      items: [
+        for (final item in items)
+          _historyBookLine(
+            item['book_copies'] as Map<String, dynamic>?,
+            item['returned_at'] == null
+                ? 'Jatuh tempo ${_date(row['due_at'])}'
+                : 'Dikembalikan · ${item['return_condition'] == 'damaged' ? 'rusak' : 'baik'}',
+          ),
+      ],
+    );
+  }
+
+  Widget _historyCard(
+    BuildContext context, {
+    required String title,
+    required String status,
+    required String subtitle,
+    required List<Widget> items,
+  }) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 4),
+          Text('$status · $subtitle'),
+          if (items.isNotEmpty) const Divider(height: 16),
+          ...items,
+        ],
+      ),
+    ),
+  );
+
+  Widget _historyBookLine(Map<String, dynamic>? copy, String detail) {
+    final book = copy?['books'] as Map<String, dynamic>?;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Text(
+        '${book?['title'] ?? 'Buku'} · ${copy?['code'] ?? 'QR tidak tersedia'} · $detail',
+      ),
+    );
+  }
+}
+
+String _activityStatus(String status) => switch (status) {
+  'pending' => 'Menunggu',
+  'partial' => 'Sebagian diproses',
+  'completed' => 'Selesai',
+  'received' => 'Diterima',
+  'rejected' => 'Ditolak',
+  'cancelled' => 'Dibatalkan',
+  'reported' => 'Dilaporkan',
+  'verified' => 'Diverifikasi',
+  'resolved' => 'Diselesaikan',
+  'good' => 'Baik',
+  'damaged' => 'Rusak',
+  _ => status,
+};
+
 class _AdminClassLoansPage extends StatefulWidget {
   const _AdminClassLoansPage();
   @override
@@ -3628,7 +4281,12 @@ class _AdminClassLoansPageState extends State<_AdminClassLoansPage> {
             .limit(100),
       );
 
-  void _refresh() => setState(() => _sessions = _load());
+  void _refresh() {
+    final next = _load();
+    setState(() {
+      _sessions = next;
+    });
+  }
 
   @override
   Widget build(BuildContext context) =>
@@ -4032,11 +4690,7 @@ class _ClassLoanCreatePageState extends State<_ClassLoanCreatePage> {
   );
 }
 
-String _dateTime(Object? value) {
-  final date = DateTime.tryParse(value as String? ?? '')?.toLocal();
-  if (date == null) return '—';
-  return '${_date(value)} pukul ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
-}
+String _dateTime(Object? value) => formatServerDateTime(value);
 
 class _MemberLoanRequestsPanel extends StatefulWidget {
   const _MemberLoanRequestsPanel();
@@ -4061,11 +4715,17 @@ class _MemberLoanRequestsPanelState extends State<_MemberLoanRequestsPanel> {
             .select(
               'id,status,created_at,decision_reason,loan_request_items(book_copies(code,books(id,title,cover_path)))',
             )
+            .eq('status', 'pending')
             .order('created_at', ascending: false)
             .limit(20),
       );
 
-  void _refresh() => setState(() => _requests = _load());
+  void _refresh() {
+    final next = _load();
+    setState(() {
+      _requests = next;
+    });
+  }
 
   @override
   Widget build(
@@ -4073,13 +4733,15 @@ class _MemberLoanRequestsPanelState extends State<_MemberLoanRequestsPanel> {
   ) => FutureBuilder<List<Map<String, dynamic>>>(
     future: _requests,
     builder: (context, snapshot) {
-      final rows = snapshot.data;
+      final rows = snapshot.data
+          ?.where(isPendingMemberLoanRequest)
+          .toList(growable: false);
       if (rows == null || rows.isEmpty) return const SizedBox.shrink();
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Pengajuan terbaru',
+            'Menunggu persetujuan',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           for (final row in rows)
@@ -4184,7 +4846,12 @@ class _AdminReturnsPageState extends State<_AdminReturnsPage> {
             .order('created_at'),
       );
 
-  void _refresh() => setState(() => _rows = _load());
+  void _refresh() {
+    final next = _load();
+    setState(() {
+      _rows = next;
+    });
+  }
 
   @override
   Widget build(BuildContext context) =>
@@ -4261,14 +4928,14 @@ class _ReturnReviewCard extends StatelessWidget {
               spacing: 4,
               children: [
                 TextButton.icon(
-                  onPressed: () => _review(context, true, 'good'),
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: const Text('Terima · baik'),
+                  onPressed: () => _scanAndReview(context, 'good'),
+                  icon: const Icon(Icons.qr_code_scanner),
+                  label: const Text('Scan · baik'),
                 ),
                 TextButton.icon(
-                  onPressed: () => _review(context, true, 'damaged'),
-                  icon: const Icon(Icons.warning_amber),
-                  label: const Text('Terima · rusak'),
+                  onPressed: () => _scanAndReview(context, 'damaged'),
+                  icon: const Icon(Icons.qr_code_scanner),
+                  label: const Text('Scan · rusak'),
                 ),
                 TextButton.icon(
                   onPressed: () => _review(context, false, null),
@@ -4283,6 +4950,23 @@ class _ReturnReviewCard extends StatelessWidget {
     );
   }
 
+  Future<void> _scanAndReview(BuildContext context, String condition) async {
+    final loanItem = item['loan_items'] as Map<String, dynamic>?;
+    final copy = loanItem?['book_copies'] as Map<String, dynamic>?;
+    final expectedCode = copy?['code'] as String?;
+    final scannedCode = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => _ReturnQrScannerPage(expectedCode: expectedCode ?? ''),
+      ),
+    );
+    if (scannedCode == null || !context.mounted) return;
+    if (!matchesExpectedReturnQr(scannedCode, expectedCode)) {
+      _snack(context, 'QR tidak cocok dengan buku yang diajukan kembali.');
+      return;
+    }
+    await _review(context, true, condition);
+  }
+
   Future<void> _review(
     BuildContext context,
     bool accept,
@@ -4290,7 +4974,7 @@ class _ReturnReviewCard extends StatelessWidget {
   ) async {
     var reason = '';
     if (!accept) {
-      final result = await _textDialog(
+      final result = await showTextDialog(
         context,
         'Tolak pengembalian',
         'Alasan penolakan',
@@ -4319,6 +5003,65 @@ class _ReturnReviewCard extends StatelessWidget {
   }
 }
 
+class _ReturnQrScannerPage extends StatefulWidget {
+  const _ReturnQrScannerPage({required this.expectedCode});
+
+  final String expectedCode;
+
+  @override
+  State<_ReturnQrScannerPage> createState() => _ReturnQrScannerPageState();
+}
+
+class _ReturnQrScannerPageState extends State<_ReturnQrScannerPage> {
+  final _controller = MobileScannerController(
+    formats: const [BarcodeFormat.qrCode],
+  );
+  bool _handled = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onDetect(BarcodeCapture capture) async {
+    if (_handled) return;
+    final code = capture.barcodes
+        .map((barcode) => barcode.rawValue?.trim())
+        .whereType<String>()
+        .where((value) => value.isNotEmpty)
+        .firstOrNull;
+    if (code == null) return;
+    _handled = true;
+    await _controller.stop();
+    if (mounted) Navigator.pop(context, code);
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Scan pengembalian')),
+    body: SafeArea(
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('Scan QR buku ${widget.expectedCode} yang diterima.'),
+          ),
+          Expanded(
+            child: MobileScanner(
+              controller: _controller,
+              onDetect: _onDetect,
+              errorBuilder: (context, error) => const Center(
+                child: Text('Kamera tidak dapat dibuka. Periksa izin kamera.'),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 class _AdminLossPage extends StatefulWidget {
   const _AdminLossPage();
   @override
@@ -4344,7 +5087,12 @@ class _AdminLossPageState extends State<_AdminLossPage> {
             .order('created_at'),
       );
 
-  void _refresh() => setState(() => _rows = _load());
+  void _refresh() {
+    final next = _load();
+    setState(() {
+      _rows = next;
+    });
+  }
 
   @override
   Widget build(BuildContext context) =>
@@ -4441,7 +5189,7 @@ class _LossReviewCard extends StatelessWidget {
   Future<void> _review(BuildContext context, bool verify) async {
     var reason = '';
     if (!verify) {
-      final result = await _textDialog(
+      final result = await showTextDialog(
         context,
         'Tolak laporan',
         'Alasan penolakan',
@@ -4469,7 +5217,7 @@ class _LossReviewCard extends StatelessWidget {
   }
 
   Future<void> _resolve(BuildContext context) async {
-    final note = await _textDialog(
+    final note = await showTextDialog(
       context,
       'Penyelesaian kehilangan',
       'Catatan penggantian atau penyelesaian',
@@ -4532,7 +5280,7 @@ class _LoanReviewCard extends StatelessWidget {
                 FilledButton.icon(
                   onPressed: () => _decide(context, true),
                   icon: const Icon(Icons.check),
-                  label: const Text('Setujui'),
+                  label: const Text('Setujui & serahkan buku'),
                 ),
                 OutlinedButton.icon(
                   onPressed: () => _decide(context, false),
@@ -4576,7 +5324,7 @@ class _LoanReviewCard extends StatelessWidget {
   Future<void> _decide(BuildContext context, bool approve) async {
     var reason = '';
     if (!approve) {
-      final value = await _textDialog(
+      final value = await showTextDialog(
         context,
         'Alasan penolakan',
         'Tuliskan alasan',
@@ -4604,11 +5352,7 @@ class _LoanReviewCard extends StatelessWidget {
   }
 }
 
-String _date(Object? value) {
-  final date = DateTime.tryParse(value as String? ?? '')?.toLocal();
-  if (date == null) return '—';
-  return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
-}
+String _date(Object? value) => formatServerDate(value);
 
 class _BookFormValue {
   const _BookFormValue(
@@ -4642,9 +5386,8 @@ class _BookDialogState extends State<_BookDialog> {
   late final _author = TextEditingController(
     text: widget.initial?['author'] as String? ?? '',
   );
-  late final _category = TextEditingController(
-    text: widget.initial?['category'] as String? ?? '',
-  );
+  final _category = TextEditingController();
+  String? _categoryGroup;
   late final _isbn = TextEditingController(
     text: widget.initial?['isbn'] as String? ?? '',
   );
@@ -4655,6 +5398,54 @@ class _BookDialogState extends State<_BookDialog> {
   XFile? _cover;
   final _imagePicker = ImagePicker();
   int _initialStock = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    final initialCategory = widget.initial?['category'] as String? ?? '';
+    const groups = ['Adaptif', 'Normatif', 'Produktif'];
+    final group = groups.firstWhere(
+      (candidate) => initialCategory.startsWith('$candidate · '),
+      orElse: () => '',
+    );
+    if (group.isNotEmpty) {
+      _categoryGroup = group;
+      _category.text = initialCategory.substring(group.length + 3);
+    } else if (widget.initial != null) {
+      _categoryGroup = 'Kustom';
+      _category.text = initialCategory;
+    }
+  }
+
+  InputDecoration _fieldDecoration(
+    BuildContext context,
+    String label, {
+    String? hint,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: colorScheme.outlineVariant),
+    );
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      floatingLabelBehavior: FloatingLabelBehavior.always,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      border: border,
+      enabledBorder: border,
+      focusedBorder: border.copyWith(
+        borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
+      ),
+      errorBorder: border.copyWith(
+        borderSide: BorderSide(color: colorScheme.error),
+      ),
+      focusedErrorBorder: border.copyWith(
+        borderSide: BorderSide(color: colorScheme.error, width: 1.5),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _title.dispose();
@@ -4665,9 +5456,6 @@ class _BookDialogState extends State<_BookDialog> {
     _customQrPrefix.dispose();
     super.dispose();
   }
-
-  String? _required(String? value) =>
-      value == null || value.trim().isEmpty ? 'Wajib diisi.' : null;
 
   Future<void> _pickCover() async {
     final image = await _imagePicker.pickImage(
@@ -4689,28 +5477,101 @@ class _BookDialogState extends State<_BookDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Informasi buku',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _title,
-                validator: _required,
-                decoration: const InputDecoration(labelText: 'Judul'),
+                validator: (value) =>
+                    requiredFieldValidator(value, message: 'Wajib diisi.'),
+                decoration: _fieldDecoration(context, 'Judul buku'),
               ),
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _author,
-                validator: _required,
-                decoration: const InputDecoration(labelText: 'Penulis'),
+                validator: (value) =>
+                    requiredFieldValidator(value, message: 'Wajib diisi.'),
+                decoration: _fieldDecoration(context, 'Penulis / pengarang'),
               ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _categoryGroup,
+                isExpanded: true,
+                validator: (value) =>
+                    value == null ? 'Pilih kelompok kategori.' : null,
+                decoration: _fieldDecoration(context, 'Kelompok kategori'),
+                items: const [
+                  DropdownMenuItem(value: 'Adaptif', child: Text('Adaptif')),
+                  DropdownMenuItem(value: 'Normatif', child: Text('Normatif')),
+                  DropdownMenuItem(
+                    value: 'Produktif',
+                    child: Text('Produktif'),
+                  ),
+                  DropdownMenuItem(value: 'Kustom', child: Text('Kustom')),
+                ],
+                onChanged: (value) => setState(() => _categoryGroup = value),
+              ),
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _category,
-                validator: _required,
-                decoration: const InputDecoration(labelText: 'Kategori'),
+                validator: (value) =>
+                    requiredFieldValidator(value, message: 'Wajib diisi.'),
+                decoration: _fieldDecoration(
+                  context,
+                  _categoryGroup == 'Produktif'
+                      ? 'Program keahlian'
+                      : _categoryGroup == 'Kustom'
+                      ? 'Kategori kustom'
+                      : 'Mata pelajaran / nama kategori',
+                  hint: _categoryGroup == 'Produktif'
+                      ? 'Contoh: TKJ'
+                      : 'Isi nama mapel atau kategori',
+                ),
               ),
+              if (_categoryGroup == 'Produktif') ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Pilihan cepat program keahlian',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    for (final program in const ['TKJ', 'TKR', 'TPTL', 'AKT'])
+                      ChoiceChip(
+                        label: Text(program),
+                        selected: _category.text.trim() == program,
+                        onSelected: (_) => setState(() {
+                          _category.text = program;
+                          _category.selection = TextSelection.collapsed(
+                            offset: _category.text.length,
+                          );
+                        }),
+                      ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _isbn,
-                decoration: const InputDecoration(labelText: 'ISBN (opsional)'),
+                decoration: _fieldDecoration(context, 'ISBN (opsional)'),
               ),
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _description,
-                decoration: const InputDecoration(labelText: 'Deskripsi'),
+                minLines: 2,
+                maxLines: 3,
+                decoration: _fieldDecoration(context, 'Deskripsi (opsional)'),
               ),
               const SizedBox(height: 10),
               Row(
@@ -4843,12 +5704,15 @@ class _BookDialogState extends State<_BookDialog> {
       FilledButton(
         onPressed: () {
           if (!_form.currentState!.validate()) return;
+          final category = _categoryGroup == 'Kustom'
+              ? _category.text.trim()
+              : '${_categoryGroup!} · ${_category.text.trim()}';
           Navigator.pop(
             context,
             _BookFormValue(
               _title.text.trim(),
               _author.text.trim(),
-              _category.text.trim(),
+              category,
               _isbn.text.trim(),
               _description.text.trim(),
               _initialStock,
@@ -4899,8 +5763,6 @@ class _StudentDialogState extends State<_StudentDialog> {
     super.dispose();
   }
 
-  String? _required(String? value) =>
-      value == null || value.trim().isEmpty ? 'Wajib diisi.' : null;
   @override
   Widget build(BuildContext context) => AlertDialog(
     title: Text(widget.initial == null ? 'Tambah siswa' : 'Ubah data siswa'),
@@ -4914,12 +5776,14 @@ class _StudentDialogState extends State<_StudentDialog> {
             children: [
               TextFormField(
                 controller: _name,
-                validator: _required,
+                validator: (value) =>
+                    requiredFieldValidator(value, message: 'Wajib diisi.'),
                 decoration: const InputDecoration(labelText: 'Nama lengkap'),
               ),
               TextFormField(
                 controller: _className,
-                validator: _required,
+                validator: (value) =>
+                    requiredFieldValidator(value, message: 'Wajib diisi.'),
                 decoration: const InputDecoration(labelText: 'Kelas'),
               ),
               TextFormField(
@@ -5006,6 +5870,7 @@ class _LoadError extends StatelessWidget {
 }
 
 String _status(String value) => switch (value) {
+  'pending' => 'Menunggu persetujuan',
   'available' => 'Tersedia',
   'borrowed' => 'Dipinjam',
   'damaged' => 'Rusak',
@@ -5013,6 +5878,12 @@ String _status(String value) => switch (value) {
   _ => value,
 };
 String _friendlyError(Object? error) {
+  final detail = error?.toString().trim() ?? '';
+  final normalized = detail.toLowerCase();
+  if (normalized.contains('permission denied') ||
+      (normalized.contains('403') && normalized.contains('unauthorized'))) {
+    return 'Bukti tidak dapat diunggah. Pastikan akun aktif dan kebijakan Storage server sudah diperbarui.';
+  }
   if (error is PostgrestException) {
     if (error.code == '23505') return 'Nomor atau kode sudah digunakan.';
     if (error.code == '42501' || error.code == 'PGRST301') {
@@ -5023,8 +5894,6 @@ String _friendlyError(Object? error) {
     }
     return error.message;
   }
-  final detail = error?.toString().trim() ?? '';
-  final normalized = detail.toLowerCase();
   if (normalized.contains('socketexception') ||
       normalized.contains('failed host lookup') ||
       normalized.contains('handshakeexception') ||
@@ -5039,19 +5908,19 @@ String _friendlyError(Object? error) {
   return 'Operasi gagal: $concise';
 }
 
-Future<String?> _textDialog(
+Future<String?> showTextDialog(
   BuildContext context,
   String title,
   String hint,
 ) async {
-  final controller = TextEditingController();
-  final value = await showDialog<String>(
+  var value = '';
+  return showDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
       title: Text(title),
       content: TextField(
-        controller: controller,
         autofocus: true,
+        onChanged: (next) => value = next,
         decoration: InputDecoration(hintText: hint),
       ),
       actions: [
@@ -5060,14 +5929,12 @@ Future<String?> _textDialog(
           child: const Text('Batal'),
         ),
         FilledButton(
-          onPressed: () => Navigator.pop(context, controller.text),
+          onPressed: () => Navigator.pop(context, value),
           child: const Text('Simpan'),
         ),
       ],
     ),
   );
-  controller.dispose();
-  return value;
 }
 
 void _snack(BuildContext context, String message) =>
