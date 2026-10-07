@@ -208,7 +208,9 @@ class _ServerShellState extends State<ServerShell> {
               (true, 2) => const AdminCirculationPage(),
               (true, _) => const MembersPage(),
               (false, 0) => const CatalogPage(admin: false),
-              (false, 1) => const MemberQrScanPage(),
+              (false, 1) => MemberQrScanPage(
+                onLoanRequestSubmitted: () => setState(() => _tab = 3),
+              ),
               (false, 2) => AccountHome(user: widget.user),
               (false, _) => MemberLoansPage(),
             },
@@ -1875,7 +1877,15 @@ class CopyQrPage extends StatelessWidget {
 }
 
 class MemberQrScanPage extends StatefulWidget {
-  const MemberQrScanPage({super.key});
+  const MemberQrScanPage({
+    super.key,
+    required this.onLoanRequestSubmitted,
+    this.initialCopy,
+  });
+
+  final VoidCallback onLoanRequestSubmitted;
+  @visibleForTesting
+  final Map<String, dynamic>? initialCopy;
 
   @override
   State<MemberQrScanPage> createState() => _MemberQrScanPageState();
@@ -1888,6 +1898,12 @@ class _MemberQrScanPageState extends State<MemberQrScanPage> {
   bool _lookingUp = false;
   String? _message;
   Map<String, dynamic>? _copy;
+
+  @override
+  void initState() {
+    super.initState();
+    _copy = widget.initialCopy;
+  }
 
   @override
   void dispose() {
@@ -2138,18 +2154,7 @@ class _MemberQrScanPageState extends State<MemberQrScanPage> {
       MaterialPageRoute(builder: (_) => MemberLoanRequestPage(copy: copy)),
     );
     if (!mounted || completed != true) return;
-
-    try {
-      final refreshed = await _fetchCopyByCode(copy['code'] as String);
-      if (mounted && refreshed != null) setState(() => _copy = refreshed);
-    } catch (_) {
-      if (mounted) {
-        _snack(
-          context,
-          'Pengajuan terkirim, tetapi status QR gagal dimuat ulang. Periksa pengajuan di menu Pinjaman.',
-        );
-      }
-    }
+    widget.onLoanRequestSubmitted();
   }
 }
 
