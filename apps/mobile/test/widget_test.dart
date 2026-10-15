@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:perpus_mobile/app/date_formatters.dart';
+import 'package:perpus_mobile/app/form_validators.dart';
 import 'package:perpus_mobile/app/perpus_app.dart';
 import 'package:perpus_mobile/app/supabase_config.dart';
 import 'package:perpus_mobile/features/auth/auth_pages.dart';
@@ -52,11 +54,31 @@ void main() {
     () {
       final message = authErrorMessage('request_timeout 504');
 
+      expect(
+        message,
+        'Respons server terlambat, jadi hasil pendaftaran belum dapat dipastikan. Periksa email konfirmasi sebelum mencoba kembali atau hubungi pengurus.',
+      );
       expect(message, contains('belum dapat dipastikan'));
       expect(message, isNot(contains('belum tercatat')));
       expect(message.toLowerCase(), isNot(contains('coba lagi')));
     },
   );
+
+  test('required field validator preserves empty and filled outputs', () {
+    expect(requiredFieldValidator(null), 'Bagian ini wajib diisi.');
+    expect(requiredFieldValidator('  '), 'Bagian ini wajib diisi.');
+    expect(requiredFieldValidator('Nama'), isNull);
+    expect(requiredFieldValidator('', message: 'Wajib diisi.'), 'Wajib diisi.');
+  });
+
+  test('server date formatters preserve current date and time output', () {
+    const localDateTime = '2026-01-02T03:04:05';
+
+    expect(formatServerDate(localDateTime), '02/01/2026');
+    expect(formatServerDateTime(localDateTime), '02/01/2026 pukul 03:04');
+    expect(formatServerDate('not-a-date'), '—');
+    expect(formatServerDateTime(null), '—');
+  });
 
   testWidgets('member signup stays open and asks for student identity', (
     tester,

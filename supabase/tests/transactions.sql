@@ -35,11 +35,13 @@ insert into public.book_copies(id,book_id,code) values
  ('40000000-0000-4000-8000-000000000014','30000000-0000-4000-8000-000000000011','TX-004'),
  ('40000000-0000-4000-8000-000000000015','30000000-0000-4000-8000-000000000012','CLASS-001'),
  ('40000000-0000-4000-8000-000000000016','30000000-0000-4000-8000-000000000012','CLASS-002'),
- ('40000000-0000-4000-8000-000000000017','30000000-0000-4000-8000-000000000013','ARCHIVE-001');
+ ('40000000-0000-4000-8000-000000000017','30000000-0000-4000-8000-000000000013','ARCHIVE-001'),
+ ('40000000-0000-4000-8000-000000000018','30000000-0000-4000-8000-000000000012','DIRECT-001');
 insert into storage.objects(bucket_id,name,owner_id) values
  ('loan-evidence','20000000-0000-4000-8000-000000000012/50000000-0000-4000-8000-000000000011.jpg','20000000-0000-4000-8000-000000000012'),
  ('loan-evidence','20000000-0000-4000-8000-000000000013/50000000-0000-4000-8000-000000000012.jpg','20000000-0000-4000-8000-000000000013'),
- ('loan-evidence','20000000-0000-4000-8000-000000000013/50000000-0000-4000-8000-000000000013.jpg','20000000-0000-4000-8000-000000000013');
+ ('loan-evidence','20000000-0000-4000-8000-000000000013/50000000-0000-4000-8000-000000000013.jpg','20000000-0000-4000-8000-000000000013'),
+ ('loan-evidence','20000000-0000-4000-8000-000000000013/50000000-0000-4000-8000-000000000014.jpg','20000000-0000-4000-8000-000000000013');
 
 set local role authenticated;
 do $$
@@ -47,6 +49,8 @@ declare
   request_a uuid;
   request_b uuid;
   request_after_loss uuid;
+  direct_request uuid;
+  direct_loan uuid;
   loan_a uuid;
   loan_item_a uuid;
   loan_item_b uuid;
@@ -97,8 +101,46 @@ begin
   if visible_count<>1 then raise exception 'Member B can read another member request'; end if;
   select count(*) into visible_count from public.transaction_evidence;
   if visible_count<>1 then raise exception 'Member B can read another member evidence metadata'; end if;
-
+  begin
+    perform public.borrow_books(
+      '50000000-0000-4000-8000-000000000014',
+      array['40000000-0000-4000-8000-000000000018'::uuid],
+      'selfie','20000000-0000-4000-8000-000000000013/50000000-0000-4000-8000-000000000014.jpg');
+    raise exception 'Member bypassed staff approval';
+  exception when insufficient_privilege then null; end;
+  direct_request := public.submit_loan_request(
+    '50000000-0000-4000-8000-000000000014',
+    array['40000000-0000-4000-8000-000000000018'::uuid],
+    'selfie','20000000-0000-4000-8000-000000000013/50000000-0000-4000-8000-000000000014.jpg');
+  if (select status from public.loan_requests where id=direct_request)<>'pending'
+     or exists(select 1 from public.loans where request_id=direct_request)
+     or (select status from public.book_copies where id='40000000-0000-4000-8000-000000000018')<>'available' then
+    raise exception 'Pending request changed stock or created a loan';
+  end if;
+  begin
+    perform public.submit_loan_request(
+      '50000000-0000-4000-8000-000000000013',
+      array['40000000-0000-4000-8000-000000000018'::uuid],
+      'selfie','20000000-0000-4000-8000-000000000013/50000000-0000-4000-8000-000000000013.jpg');
+    raise exception 'Duplicate pending copy accepted';
+  exception when raise_exception then
+    if sqlerrm<>'Buku ini sudah ada dalam pengajuan yang menunggu pengurus.' then raise; end if;
+  end;
+  begin
+    perform public.review_loan_request(direct_request,true,null);
+    raise exception 'Member approved own request';
+  exception when raise_exception then
+    if sqlerrm<>'Akses admin diperlukan.' then raise; end if;
+  end;
   perform set_config('request.jwt.claim.sub','20000000-0000-4000-8000-000000000011',true);
+  perform public.review_loan_request(direct_request,true,null);
+  select id into direct_loan from public.loans where request_id=direct_request
+    and approval_mode='staff' and approved_by='20000000-0000-4000-8000-000000000011';
+  if direct_loan is null or
+     (select status from public.book_copies where id='40000000-0000-4000-8000-000000000018')<>'borrowed' then
+    raise exception 'Staff approval did not create loan and update stock';
+  end if;
+
   perform public.archive_available_copy('40000000-0000-4000-8000-000000000014');
   if (select archived_at is null from public.book_copies where id='40000000-0000-4000-8000-000000000014') then
     raise exception 'Admin could not archive available copy';

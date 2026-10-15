@@ -1,8 +1,12 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:perpus_ui_kit/perpus_ui_kit.dart';
 
 import '../features/auth/auth_pages.dart';
 import 'session_idle_timeout.dart';
+import 'supabase_config.dart';
 
 class PerpusApp extends StatelessWidget {
   const PerpusApp({super.key, this.initialPasswordRecovery = false});
@@ -14,12 +18,111 @@ class PerpusApp extends StatelessWidget {
     theme: perpusTheme(),
     builder: (context, child) => Listener(
       onPointerDown: (_) => SessionIdleTimeout.recordActivity(),
-      child: child ?? const SizedBox.shrink(),
+      child: _ConnectionNotice(child: child ?? const SizedBox.shrink()),
     ),
     home: SessionRouter(
       initialPasswordRecovery: initialPasswordRecovery,
       signedOutBuilder: (_) => const WelcomePage(),
     ),
+  );
+}
+
+class _ConnectionNotice extends StatefulWidget {
+  const _ConnectionNotice({required this.child});
+  final Widget child;
+
+  @override
+  State<_ConnectionNotice> createState() => _ConnectionNoticeState();
+}
+
+class _ConnectionNoticeState extends State<_ConnectionNotice>
+    with WidgetsBindingObserver {
+  Timer? _retryTimer;
+  bool _checking = false;
+  bool _unreachable = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_checkConnection());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_checkConnection());
+    if (state == AppLifecycleState.paused) _retryTimer?.cancel();
+  }
+
+  Future<void> _checkConnection() async {
+    if (_checking) return;
+    _checking = true;
+    _retryTimer?.cancel();
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
+    var reachable = false;
+    try {
+      final request = await client
+          .openUrl('HEAD', Uri.parse(SupabaseConfig.url))
+          .timeout(const Duration(seconds: 5));
+      final response = await request.close().timeout(
+        const Duration(seconds: 5),
+      );
+      await response.drain<void>().timeout(const Duration(seconds: 5));
+      reachable = true;
+    } catch (_) {
+      reachable = false;
+    } finally {
+      client.close(force: true);
+      _checking = false;
+    }
+
+    if (!mounted) return;
+    setState(() => _unreachable = !reachable);
+    if (!reachable) {
+      _retryTimer = Timer(
+        const Duration(seconds: 20),
+        () => unawaited(_checkConnection()),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _retryTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      if (_unreachable)
+        SafeArea(
+          bottom: false,
+          child: Material(
+            color: Theme.of(context).colorScheme.errorContainer,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.cloud_off_outlined),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Tidak dapat terhubung ke server perpustakaan. Periksa koneksi internet.',
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _checking ? null : _checkConnection,
+                    child: const Text('Coba lagi'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      Expanded(child: widget.child),
+    ],
   );
 }
 

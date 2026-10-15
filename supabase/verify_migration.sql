@@ -90,10 +90,28 @@ begin
     raise exception 'Trusted recovery RPC exposed to a client role';
   end if;
   if to_regprocedure('public.submit_loan_request(uuid,uuid[],text,text)') is null or
+     to_regprocedure('public.borrow_books(uuid,uuid[],text,text)') is null or
      to_regprocedure('public.review_loan_request(uuid,boolean,text)') is null or
      to_regprocedure('public.review_return_item(uuid,boolean,text,text)') is null or
      to_regprocedure('public.resolve_loss(uuid,text)') is null then
     raise exception 'Transaction RPC missing';
+  end if;
+  if not exists (
+    select 1 from pg_attribute
+    where attrelid='public.loans'::regclass and attname='approval_mode'
+      and not attisdropped
+  ) or exists (
+    select 1 from pg_attribute
+    where attrelid='public.loans'::regclass and attname='approved_by'
+      and attnotnull and not attisdropped
+  ) then
+    raise exception 'Self-service loan schema missing';
+  end if;
+  if has_function_privilege('authenticated',
+       'public.borrow_books(uuid,uuid[],text,text)','EXECUTE') or
+     has_function_privilege('anon',
+       'public.borrow_books(uuid,uuid[],text,text)','EXECUTE') then
+    raise exception 'Direct borrowing must not bypass staff approval';
   end if;
   if has_function_privilege('anon','public.review_loan_request(uuid,boolean,text)','EXECUTE') or
      has_function_privilege('anon','public.review_return_item(uuid,boolean,text,text)','EXECUTE') or

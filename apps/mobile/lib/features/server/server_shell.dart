@@ -4476,11 +4476,48 @@ class _ClassLoanCreatePageState extends State<_ClassLoanCreatePage> {
   );
   final _className = TextEditingController();
   final _activity = TextEditingController();
+  final _globalQuantity = TextEditingController(text: '1');
   final List<Map<String, dynamic>> _copies = [];
+  List<Map<String, dynamic>> _bookOptions = [];
+  String? _globalBookId;
   DateTime _dueAt = DateTime.now().add(const Duration(hours: 3));
   bool _lookingUp = false;
   bool _saving = false;
+  bool _globalMode = false;
   String? _scanMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBookOptions();
+  }
+
+  Future<void> _loadBookOptions() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('books')
+          .select(
+            'id,title,category,archived_at,book_copies(id,status,archived_at)',
+          );
+      if (!mounted) return;
+      setState(() {
+        _bookOptions = (rows as List).whereType<Map<String, dynamic>>().where((
+          book,
+        ) {
+          if (book['archived_at'] != null) return false;
+          final copies = (book['book_copies'] as List?) ?? const [];
+          return copies.any(
+            (copy) =>
+                copy is Map<String, dynamic> &&
+                copy['status'] == 'available' &&
+                copy['archived_at'] == null,
+          );
+        }).toList();
+      });
+    } catch (error) {
+      if (mounted) setState(() => _scanMessage = _friendlyError(error));
+    }
+  }
 
   @override
   void dispose() {
@@ -4488,6 +4525,7 @@ class _ClassLoanCreatePageState extends State<_ClassLoanCreatePage> {
     _responsible.dispose();
     _className.dispose();
     _activity.dispose();
+    _globalQuantity.dispose();
     super.dispose();
   }
 
@@ -4568,25 +4606,42 @@ class _ClassLoanCreatePageState extends State<_ClassLoanCreatePage> {
     if (_responsible.text.trim().isEmpty ||
         _className.text.trim().isEmpty ||
         _activity.text.trim().isEmpty ||
-        _copies.isEmpty) {
+        (!_globalMode && _copies.isEmpty) ||
+        (_globalMode && _globalBookId == null)) {
       _snack(
         context,
-        'Isi penanggung jawab, kelas, kegiatan, dan scan minimal satu buku.',
+        'Isi penanggung jawab, kelas, kegiatan, dan pilih buku atau scan QR.',
       );
       return;
     }
     setState(() => _saving = true);
     try {
+      final quantity = int.tryParse(_globalQuantity.text.trim());
+      if (_globalMode && (quantity == null || quantity < 1)) {
+        throw const FormatException(
+          'Jumlah buku harus berupa angka minimal satu.',
+        );
+      }
       await Supabase.instance.client.rpc(
-        'create_class_loan',
-        params: {
-          'p_idempotency_key': _newRequestUuid(),
-          'p_responsible_name': _responsible.text.trim(),
-          'p_class_name': _className.text.trim(),
-          'p_activity': _activity.text.trim(),
-          'p_due_at': _dueAt.toUtc().toIso8601String(),
-          'p_copy_ids': _copies.map((copy) => copy['id']).toList(),
-        },
+        _globalMode ? 'create_class_loan_by_book' : 'create_class_loan',
+        params: _globalMode
+            ? {
+                'p_idempotency_key': _newRequestUuid(),
+                'p_responsible_name': _responsible.text.trim(),
+                'p_class_name': _className.text.trim(),
+                'p_activity': _activity.text.trim(),
+                'p_due_at': _dueAt.toUtc().toIso8601String(),
+                'p_book_id': _globalBookId,
+                'p_quantity': quantity,
+              }
+            : {
+                'p_idempotency_key': _newRequestUuid(),
+                'p_responsible_name': _responsible.text.trim(),
+                'p_class_name': _className.text.trim(),
+                'p_activity': _activity.text.trim(),
+                'p_due_at': _dueAt.toUtc().toIso8601String(),
+                'p_copy_ids': _copies.map((copy) => copy['id']).toList(),
+              },
       );
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
@@ -4620,6 +4675,41 @@ class _ClassLoanCreatePageState extends State<_ClassLoanCreatePage> {
               labelText: 'Kegiatan pembelajaran',
             ),
           ),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Pilih judul dan jumlah'),
+            subtitle: Text(
+              _globalMode
+                  ? 'Sistem memilih QR tersedia secara otomatis.'
+                  : 'Gunakan pemindaian untuk menentukan QR fisik tertentu.',
+            ),
+            value: _globalMode,
+            onChanged: _saving
+                ? null
+                : (value) => setState(() => _globalMode = value),
+          ),
+          if (_globalMode) ...[
+            DropdownButtonFormField<String>(
+              value: _globalBookId,
+              decoration: const InputDecoration(labelText: 'Judul buku'),
+              items: [
+                for (final book in _bookOptions)
+                  DropdownMenuItem<String>(
+                    value: book['id'] as String?,
+                    child: Text(book['title'] as String? ?? 'Buku'),
+                  ),
+              ],
+              onChanged: _saving
+                  ? null
+                  : (value) => setState(() => _globalBookId = value),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _globalQuantity,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Jumlah buku'),
+            ),
+          ],
           const SizedBox(height: 8),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -4631,7 +4721,9 @@ class _ClassLoanCreatePageState extends State<_ClassLoanCreatePage> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Scan eksemplar (${_copies.length})',
+            _globalMode
+                ? 'Pemindaian QR fisik (opsional)'
+                : 'Scan eksemplar (${_copies.length})',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 8),
@@ -4697,7 +4789,11 @@ class _ClassLoanCreatePageState extends State<_ClassLoanCreatePage> {
                   )
                 : const Icon(Icons.save_outlined),
             label: Text(
-              _saving ? 'Menyimpan...' : 'Mulai sesi · ${_copies.length} buku',
+              _saving
+                  ? 'Menyimpan...'
+                  : _globalMode
+                  ? 'Mulai sesi · ${_globalQuantity.text} buku'
+                  : 'Mulai sesi · ${_copies.length} buku',
             ),
           ),
         ],

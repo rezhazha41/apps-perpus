@@ -82,6 +82,19 @@ async function main() {
   });
   assert.notEqual(claimPreflight.status, 404, 'Migration 202610010001_member_claim_recovery.sql is missing.');
   log('member-claim migration preflight', 'PASS');
+  const directBorrowPreflight = await apiRequest(config, '/rest/v1/rpc/borrow_books', {
+    service: true,
+    method: 'POST',
+    body: {
+      p_idempotency_key: null,
+      p_copy_ids: [],
+      p_evidence_method: null,
+      p_evidence_path: null,
+    },
+    allowStatus: [400, 401, 403, 404],
+  });
+  assert.notEqual(directBorrowPreflight.status, 404, 'Migration 202610020001_self_service_borrowing.sql is missing.');
+  log('historical borrowing RPC exists', 'PASS');
 
   const invalidSignup = await apiRequest(config, '/auth/v1/signup', {
     method: 'POST',
@@ -299,6 +312,13 @@ async function main() {
   assert.ok(adminEvidence.data.length > 0);
   log('private Storage owner/cross-member/admin access', 'PASS');
 
+  const blockedDirect = await rpc(config, 'borrow_books', {
+    p_idempotency_key: idempotencyKey,
+    p_copy_ids: [copy.id],
+    p_evidence_method: 'student_card',
+    p_evidence_path: evidencePath,
+  }, { token: memberAToken, allowStatus: [403] });
+  assert.equal(blockedDirect.status, 403, 'Direct borrowing must be disabled. Apply 202610060001.');
   const submitted = await rpc(config, 'submit_loan_request', {
     p_idempotency_key: idempotencyKey,
     p_copy_ids: [copy.id],
@@ -309,18 +329,27 @@ async function main() {
     ? submitted.data
     : submitted.data;
   assert.match(requestId, /^[0-9a-f-]{36}$/i);
+  const requestRows = await list(`/rest/v1/loan_requests?select=id,status&id=eq.${requestId}`, memberAToken);
+  assert.equal(requestRows[0]?.status, 'pending');
+  assert.equal((await list('/rest/v1/loans?select=id&request_id=eq.' + requestId, memberAToken)).length, 0);
+  assert.equal((await list('/rest/v1/book_copies?select=status&id=eq.' + copy.id, adminToken))[0]?.status, 'available');
+  const memberReview = await rpc(config, 'review_loan_request', {
+    p_request_id: requestId, p_approve: true, p_reason: null,
+  }, { token: memberAToken, allowStatus: [400] });
+  assert.equal(memberReview.status, 400);
   await rpc(config, 'review_loan_request', {
-    p_request_id: requestId,
-    p_approve: true,
-    p_reason: null,
+    p_request_id: requestId, p_approve: true, p_reason: null,
   }, { token: adminToken });
-  const aLoans = await list(`/rest/v1/loans?select=id,member_id&request_id=eq.${requestId}`, memberAToken);
+  assert.equal((await list('/rest/v1/loan_requests?select=status&id=eq.' + requestId, adminToken))[0]?.status, 'approved');
+  const aLoans = await list(`/rest/v1/loans?select=id,member_id,approved_by,approval_mode&request_id=eq.${requestId}`, memberAToken);
   assert.equal(aLoans.length, 1);
+  assert.equal(aLoans[0]?.approval_mode, 'staff');
+  assert.ok(aLoans[0]?.approved_by);
   const bLoans = await list(`/rest/v1/loans?select=id&request_id=eq.${requestId}`, memberBToken);
   assert.equal(bLoans.length, 0, 'Member B unexpectedly read member A loan.');
   const finalCopies = await list(`/rest/v1/book_copies?select=status&id=eq.${copy.id}`, adminToken);
   assert.equal(finalCopies[0]?.status, 'borrowed');
-  log('loan request and atomic approval through RPC', 'PASS');
+  log('pending request keeps stock; staff approval records loan and stock; direct borrowing denied', 'PASS');
 
   log('isolated Supabase integration', 'PASS', 'synthetic data intentionally retained in disposable stack');
 }

@@ -2,7 +2,7 @@
 
 Direktori proyek: `D:\apps\Perpus`
 
-Status: M1 dan fitur utama M2 tersedia. Alur M3 untuk pengajuan pinjaman, bukti foto privat, persetujuan, pengembalian sebagian/penuh, kehilangan, dan peminjaman pembelajaran sudah tersedia pada kode. Verifier lokal Flutter, data-access, dan SQL lulus. Regression PostgreSQL dua koneksi juga membuktikan persetujuan tidak dapat menghasilkan pinjaman aktif pada buku terarsip, dua persetujuan pada eksemplar yang sama hanya memiliki satu pemenang, dan operasi multi-item dengan urutan berbeda selesai tanpa deadlock. Kebijakan satu claim terbuka per siswa, pengajuan ulang memakai akun yang sama, dan pemulihan akun dengan verifikasi pengurus sudah diimplementasikan serta lulus pengujian lokal. Verifikasi server read-only pada 1 Oktober 2026 membuktikan migrasi penguncian dan migrasi claim/pemulihan terbaru belum diterapkan; integrasi GoTrue, Edge Function, dan Storage nyata masih harus diuji pada Supabase terisolasi. Aplikasi belum dinyatakan sebagai MVP produksi.
+Status 6 Oktober 2026: alur baru kembali memakai pengajuan dan persetujuan pengurus. Stok berubah setelah pengurus memeriksa siswa serta buku dan menyetujui penyerahan. Migrasi `202610060001_staff_approval_required.sql` sudah diterapkan dan diverifikasi pada server aktif setelah backup; APK debug terbaru sudah dipasang pada perangkat. Hasil pengujian dicatat di docs/progress-log.md.
 
 Keputusan terbaru pengguna: **Supabase self-hosted di server lokal/LAN melalui Nginx Proxy Manager**, login email + kata sandi, aktivasi akun melalui verifikasi admin. Kebijakan lain yang masih berupa usulan pada PRD tetap belum dianggap disetujui.
 
@@ -54,7 +54,7 @@ Referensi teknologi:
 | Mendaftar menggunakan NIS atau NISN terdaftar | Menambahkan daftar siswa yang boleh mendaftar |
 | Melihat katalog dan ketersediaan | Mengelola judul dan eksemplar buku |
 | Scan QR untuk pengajuan peminjaman dan melihat sampul, judul, kategori, serta kode QR buku | Membuat QR setiap eksemplar |
-| Memilih selfie atau kartu OSIS sebagai bukti | Memeriksa bukti dan menyetujui peminjaman |
+| Memilih selfie atau kartu OSIS sebagai bukti; mengajukan pinjaman untuk diperiksa pengurus | Meninjau pinjaman aktif dan menangani pengembalian/kehilangan |
 | Melihat jumlah dan daftar buku pinjaman | Melihat pinjaman setiap siswa |
 | Mengajukan pengembalian | Scan dan memvalidasi buku yang diterima |
 | Menerima pengingat jatuh tempo | Mengatur durasi, batas pinjaman, jadwal pengingat |
@@ -105,6 +105,8 @@ Status eksemplar: tersedia, dipinjam, rusak, atau hilang.
 
 QR berisi identitas eksemplar, bukan informasi pribadi siswa. Scan tidak langsung mengurangi stok. Status berubah setelah transaksi peminjaman disahkan server. Jumlah tersedia dihitung berdasarkan status eksemplar.
 
+Kategori buku mendukung kelompok **Adaptif**, **Normatif**, dan **Produktif**. Admin dapat menuliskan mapel atau kategori sendiri; kelompok Produktif menyediakan pilihan cepat TKJ, TKR, TPTL, dan AKT. Kategori kustom tetap tersedia untuk sekolah dengan jurusan atau pengelompokan berbeda. QR inventaris dapat dicetak satuan atau sekaligus untuk kategori yang dipilih, dengan tata letak kertas A4 atau F4.
+
 ## 6. Bukti peminjaman
 
 Anggota memilih salah satu metode berikut:
@@ -127,16 +129,17 @@ Foto disimpan privat dan hanya dapat diakses pengguna yang berhak. Admin memilih
 3. Anggota scan QR setiap buku yang akan dipinjam.
 4. Aplikasi menampilkan daftar buku dan perkiraan batas pengembalian.
 5. Anggota memilih selfie atau kartu OSIS dan mengambil foto bukti.
-6. Pengajuan dikirim kepada admin.
-7. Admin memeriksa identitas, bukti, dan buku fisik yang diserahkan.
-8. Admin menyetujui atau menolak pengajuan.
-9. Saat persetujuan, server memeriksa ulang ketersediaan dan kelayakan peminjam.
-10. Dalam satu transaksi database, server mencatat pinjaman aktif dan mengubah status buku.
-11. Anggota menerima konfirmasi serta tanggal jatuh tempo final.
+6. Aplikasi mendeteksi keberadaan wajah pada foto di perangkat.
+7. Anggota memilih **Ajukan pinjaman**. Pengajuan tercatat **Menunggu pengurus**; stok belum berubah.
+8. Pengurus mencocokkan siswa, foto bukti, dan QR buku fisik. Pilih **Setujui & serahkan buku**, atau tolak dengan alasan.
+9. Saat disetujui, server memeriksa ulang akun, batas, keterlambatan, kehilangan, serta stok. Pinjaman dan perubahan status buku dicatat atomik.
+10. Anggota menerima pinjaman aktif dengan tanggal jatuh tempo, kemudian membawa buku.
 
-Jatuh tempo dihitung dari waktu persetujuan berdasarkan pengaturan perpustakaan. Nilai jatuh tempo disimpan pada transaksi agar perubahan durasi default tidak mengubah pinjaman lama secara diam-diam.
+Jatuh tempo dihitung dari waktu persetujuan di server. Pengajuan bukan reservasi: jika buku sudah tidak tersedia ketika diperiksa, persetujuan gagal tanpa perubahan parsial.
 
-Pengajuan ditolak tidak mengubah stok. Server mencegah transaksi ganda akibat tombol ditekan berulang dan mencegah satu eksemplar dipinjam dua anggota secara bersamaan. Pengajuan belum disetujui tidak menjamin ketersediaan buku.
+Retry dengan kunci sama tidak menggandakan pengajuan. Kunci baru untuk anggota dan QR yang masih menunggu ditolak. Pembatalan dan penolakan memungkinkan pengajuan baru. Scan saja tidak membuat pengajuan. RPC pinjam langsung ditutup bagi klien setelah migrasi terbaru diterapkan; pinjaman lama tetap tersimpan.
+
+Masa kedaluwarsa pengajuan otomatis belum ditetapkan atau diimplementasikan; pengurus dapat menolak, anggota dapat membatalkan pengajuan.
 
 ## 8. Alur pengembalian
 
@@ -187,7 +190,7 @@ Anggota mengajukan laporan kehilangan, lalu admin memverifikasi dan menetapkan s
 | `book_copies` | Eksemplar fisik, kode QR, kondisi, status |
 | `loan_requests` | Pengajuan peminjaman dan keputusan admin |
 | `loan_request_items` | Buku dalam pengajuan |
-| `loans` | Peminjam, waktu persetujuan, admin pemroses |
+| `loans` | Peminjam, waktu pinjam, mode otomatis atau admin pemroses |
 | `loan_items` | Eksemplar, jatuh tempo, waktu kembali, status penyelesaian |
 | `transaction_evidence` | Metode bukti, file privat, kebijakan retensi tersalin, waktu mulai retensi, jadwal dan status penghapusan |
 | `return_requests` | Pengajuan pengembalian |
@@ -251,25 +254,30 @@ flowchart TD
     A[Katalog atau Scan QR] --> B{QR dikenal dan eksemplar tersedia?}
     B -->|Tidak| C[Tampilkan alasan tanpa mengubah stok]
     B -->|Ya| D[Tampilkan detail buku dan eksemplar]
-    D --> E[Pilih bukti selfie atau kartu OSIS]
-    E --> F[Unggah bukti privat]
-    F --> G[Ajukan peminjaman dengan idempotency key]
-    G --> H[Status menunggu persetujuan]
-    H --> I{Keputusan pengurus}
-    I -->|Ditolak| J[Tampilkan alasan dan mulai retensi bukti]
-    I -->|Disetujui| K[Validasi ulang akun, batas, buku, dan eksemplar]
-    K -->|Tidak valid| L[Batalkan seluruh approval tanpa perubahan parsial]
-    K -->|Valid| M[Buat pinjaman dan ubah eksemplar menjadi dipinjam]
-    M --> N[Pinjaman tampil pada menu Pinjaman]
-    N --> O{Tindakan anggota}
-    O -->|Kembalikan sebagian atau penuh| P[Ajukan pengembalian per eksemplar]
-    P --> Q[Pengurus memeriksa kondisi fisik]
-    Q --> R[Eksemplar menjadi tersedia atau rusak]
-    O -->|Buku hilang| S[Ajukan laporan kehilangan]
-    S --> T[Pengurus verifikasi dan menyelesaikan kewajiban]
+    D --> E[Pilih bukti selfie atau kartu siswa]
+    E --> F[Ambil foto; deteksi wajah berjalan di perangkat]
+    F --> G{Jenis bukti dipilih dan wajah terdeteksi?}
+    G -->|Tidak| H[Tombol Ajukan pinjaman tetap nonaktif]
+    G -->|Ya| I[Ajukan pinjaman dengan idempotency key]
+    I --> J{Validasi server dan stok}
+    J -->|Gagal| K[Tampilkan alasan; tidak ada perubahan stok]
+    J -->|Lulus| W[Pengajuan menunggu; stok tetap]
+    W --> X[Pengurus memeriksa siswa dan buku fisik]
+    X --> Y{Setujui dan serahkan buku?}
+    Y -->|Tolak| Z[Catat alasan; stok tetap]
+    Y -->|Setujui| V{Validasi ulang stok dan kelayakan}
+    V -->|Gagal| K
+    V -->|Lulus| L[Catat pinjaman dan stok secara atomik]
+    L --> M[Pinjaman tampil pada menu Pinjaman]
+    M --> N{Tindakan anggota}
+    N -->|Kembalikan sebagian atau penuh| O[Ajukan pengembalian per eksemplar]
+    O --> P[Pengurus memeriksa kondisi fisik]
+    P --> Q[Eksemplar menjadi tersedia atau rusak]
+    N -->|Buku hilang| R[Ajukan laporan kehilangan]
+    R --> S[Pengurus verifikasi dan menyelesaikan kewajiban]
 ```
 
-Scan QR tidak langsung mengurangi stok. Stok berubah hanya setelah persetujuan backend berhasil. Pengembalian sebagian menutup eksemplar yang diterima saja; pinjaman lain tetap aktif.
+Scan QR hanya menampilkan ketersediaan. Stok berkurang ketika pengurus menyetujui penyerahan melalui RPC `review_loan_request`; pengajuan anggota sendiri belum mengubah stok. Deteksi wajah hanya memastikan ada wajah yang terlihat; deteksi tersebut tidak membuktikan wajah milik peminjam atau foto diambil saat itu. Pengembalian sebagian menutup eksemplar yang diterima saja; pinjaman lain tetap aktif.
 
 ### Alur pengurus, katalog, dan inventaris
 
@@ -284,12 +292,12 @@ flowchart TD
     D --> H[Isi stok awal dan awalan QR otomatis atau custom]
     H --> I[Buat kode unik tiap eksemplar]
     I --> J[Kelola stok +1 atau -1]
-    J --> K[Lihat dan cetak QR per eksemplar]
+    J --> K[Lihat QR satuan atau cetak QR per kategori · A4/F4]
     C --> L[Arsipkan eksemplar tersedia atau judul]
     L --> M{Ada eksemplar sedang dipinjam?}
     M -->|Ya| N[Tolak arsip]
     M -->|Tidak| O[Arsip lunak; riwayat tetap tersimpan]
-    B -->|Aktivitas| P[Pengajuan, Pengembalian, Kehilangan, Pembelajaran]
+    B -->|Aktivitas| P[Pinjaman, Pengembalian, Kehilangan, Pembelajaran, Riwayat]
     B -->|Anggota| Q[Data siswa dan aktivasi anggota]
     B -->|Dashboard| R[Ringkasan stok, pinjaman, keterlambatan, dan antrean]
 ```
@@ -406,7 +414,7 @@ Struktur di atas merupakan target monorepo. Aplikasi mobile dan tiga paket bersa
 4. Implementasikan daftar siswa admin serta pendaftaran dan aktivasi anggota.
 5. Implementasikan katalog, inventaris, dan QR unik.
 6. Implementasikan peminjaman dengan pilihan selfie atau kartu OSIS.
-7. Implementasikan persetujuan admin dan pembaruan stok atomik.
+7. Pertahankan review pengurus untuk permintaan lama yang masih menunggu.
 8. Implementasikan pengembalian sebagian dan penuh.
 9. Implementasikan keterlambatan, pembatasan pinjaman, dan notifikasi.
 10. Implementasikan laporan kehilangan dan riwayat admin.
@@ -503,14 +511,14 @@ Pengguna utama adalah siswa peminjam dan pengurus perpustakaan. Cakupan awal sat
 | --- | --- | --- |
 | P0: wajib MVP | Data siswa, pendaftaran dan aktivasi, login, hak akses | Akun hanya aktif untuk siswa terverifikasi |
 | P0: wajib MVP | Katalog, eksemplar, QR, pencarian | Identitas eksemplar unik |
-| P0: wajib MVP | Pengajuan, pilihan bukti, persetujuan admin | Transaksi dan stok konsisten |
+| P0: wajib MVP | Pengajuan dengan bukti dan persetujuan pengurus | Transaksi dan stok konsisten |
 | P0: wajib MVP | Pengembalian penuh/sebagian | Penerimaan fisik diverifikasi admin |
 | P0: wajib MVP | Daftar pinjaman per siswa, keterlambatan, pembatasan | Penegakan di backend |
 | P0: wajib MVP | Notifikasi dalam aplikasi dan push terjadwal | Pengingat tidak bergantung pada aplikasi terbuka |
 | P0: wajib MVP | Laporan kehilangan dan penyelesaian manual oleh admin | Jejak perubahan tersimpan |
 | P0: wajib MVP | Pengaturan retensi foto dan penghapusan terjadwal | Bukti transaksi aktif tetap terlindungi |
 | P0: wajib MVP | Laporan PDF/CSV dan arsip tahunan | Snapshot berversi untuk kebutuhan lembaga |
-| P1: lanjutan | Impor siswa CSV, ekspor Excel berformat, cetak label QR massal | Setelah alur utama stabil |
+| P1: lanjutan | Impor siswa CSV, ekspor Excel berformat | Setelah alur utama stabil |
 
 Di luar MVP: iOS/web, banyak sekolah, GPS, pengenalan wajah/liveness, OCR/NFC kartu, pembayaran denda otomatis, reservasi buku, perpanjangan pinjaman, dan transaksi offline. Ini tidak mengurangi kebutuhan P0 meskipun pengerjaannya bertahap.
 
@@ -521,9 +529,9 @@ Di luar MVP: iOS/web, banyak sekolah, GPS, pengenalan wajah/liveness, OCR/NFC ka
 | FR-01 | Admin mengelola siswa | Admin dapat menambah siswa dengan minimal NIS atau NISN; nomor duplikat ditolak; anggota tidak dapat mengubah daftar resmi |
 | FR-02 | Siswa mendaftar mandiri | Identitas yang tidak terdaftar/tidak aktif ditolak; NIS dan NISN siswa yang sama tidak menghasilkan dua akun aktif; verifikasi kepemilikan diperlukan |
 | FR-03 | Login dan akses peran | Sesi anggota tidak dapat menjalankan tindakan admin melalui UI maupun panggilan backend langsung; akun belum aktif tidak dapat meminjam |
-| FR-04 | Inventaris | Admin dapat membuat judul dan eksemplar; QR memetakan satu eksemplar; jumlah tersedia sama dengan jumlah eksemplar berstatus tersedia |
+| FR-04 | Inventaris | Admin dapat membuat judul, memilih kelompok/kategori kustom, mengelola eksemplar; QR memetakan satu eksemplar; QR dapat dicetak per kategori pada A4/F4; jumlah tersedia sama dengan jumlah eksemplar berstatus tersedia |
 | FR-05 | Bukti transaksi | Pengguna memilih selfie atau foto kartu OSIS; pengajuan hanya dapat dikirim setelah bukti tersimpan; bukti tidak dapat diakses anggota lain |
-| FR-06 | Peminjaman | Persetujuan memvalidasi ulang seluruh buku dan batas peminjam; satu buku tidak bisa memiliki dua pinjaman terbuka; pengulangan permintaan tidak menggandakan transaksi |
+| FR-06 | Peminjaman | RPC memvalidasi ulang seluruh buku, batas, dan kewajiban peminjam; stok berubah atomik; satu buku tidak bisa memiliki dua pinjaman terbuka; pengulangan permintaan tidak menggandakan transaksi |
 | FR-07 | Pengembalian | Scan admin menutup hanya buku yang diterima; pengembalian satu dari tiga buku menyisakan dua pinjaman; scan buku yang tidak terkait ditolak |
 | FR-08 | Keterlambatan | Setelah jatuh tempo server memblokir pinjaman baru; akses pengembalian tetap terbuka; setelah semua kewajiban selesai pembatasan terkait dicabut |
 | FR-09 | Pengingat | Pengujian jadwal menghasilkan satu pesan per pinjaman/periode; pesan tersimpan dalam aplikasi; proses berhenti setelah kewajiban selesai |
@@ -532,15 +540,17 @@ Di luar MVP: iOS/web, banyak sekolah, GPS, pengenalan wajah/liveness, OCR/NFC ka
 | FR-12 | Pengaturan | Durasi dan batas pinjaman dapat diubah admin; perubahan default tidak mengubah jatuh tempo pinjaman lama |
 | FR-13 | Retensi foto | Admin dapat memilih 3/7/30 hari atau 1 tahun; bukti aktif tidak terhapus; file yang jatuh tempo dihapus tanpa menghapus transaksi; perubahan pengaturan tercatat |
 | FR-14 | Laporan dan arsip | Admin dapat mengekspor PDF/CSV per periode; snapshot yang disahkan tetap sama setelah data operasional berubah; koreksi membuat versi baru; anggota tidak dapat mengakses arsip lembaga |
+| FR-15 | Riwayat aktivitas | Pengurus dapat melihat pinjaman, pengembalian, kehilangan, dan sesi pembelajaran beserta nama buku, kode QR, waktu, dan statusnya |
 
-Usulan perilaku persetujuan MVP: semua item dalam satu pengajuan disetujui secara atomik. Bila satu item tidak tersedia, tidak ada item yang berubah menjadi dipinjam; anggota memperoleh informasi untuk memperbaiki pengajuan.
+Persetujuan hanya selesai jika seluruh item tersedia dan semua aturan lolos. Bila satu item tidak tersedia, tidak ada perubahan stok parsial. Semua pengajuan baru menunggu pemeriksaan pengurus.
 
 ## 20. Status dan kasus khusus
 
 | Entitas | Alur status yang direncanakan |
 | --- | --- |
 | Akun | Menunggu verifikasi → aktif; penolakan disertai alasan dan jalur pengajuan ulang; admin dapat menonaktifkan akun |
-| Pengajuan pinjaman | Menunggu → disetujui / ditolak / dibatalkan anggota sebelum persetujuan |
+| Peminjaman baru | Menunggu pengurus -> disetujui / ditolak / dibatalkan; stok berubah hanya saat disetujui |
+| Permintaan lama | Menunggu → disetujui / ditolak / dibatalkan anggota sebelum persetujuan |
 | Detail pinjaman | Dipinjam → dikembalikan atau kehilangan terverifikasi → diselesaikan admin |
 | Pengajuan pengembalian | Menunggu → selesai / ditolak dengan alasan |
 | Laporan kehilangan | Dilaporkan → diverifikasi / ditolak → diselesaikan |

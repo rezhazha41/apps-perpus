@@ -57,10 +57,16 @@ try {
   await db.exec(bookCovers);
   const classroomLoans = await readFile(new URL('../../supabase/migrations/202609300002_classroom_loans.sql', import.meta.url), 'utf8');
   await db.exec(classroomLoans);
+  const classroomBookQuantity = await readFile(new URL('../../supabase/migrations/202610150001_classroom_book_quantity.sql', import.meta.url), 'utf8');
+  await db.exec(classroomBookQuantity);
   const inventoryLockProtocol = await readFile(new URL('../../supabase/migrations/202609300003_inventory_lock_protocol.sql', import.meta.url), 'utf8');
   await db.exec(inventoryLockProtocol);
   const memberClaimRecovery = await readFile(new URL('../../supabase/migrations/202610010001_member_claim_recovery.sql', import.meta.url), 'utf8');
   await db.exec(memberClaimRecovery);
+  const selfServiceBorrowing = await readFile(new URL('../../supabase/migrations/202610020001_self_service_borrowing.sql', import.meta.url), 'utf8');
+  await db.exec(selfServiceBorrowing);
+  const staffApprovalRequired = await readFile(new URL('../../supabase/migrations/202610060001_staff_approval_required.sql', import.meta.url), 'utf8');
+  await db.exec(staffApprovalRequired);
   const verification = await readFile(new URL('../../supabase/verify_migration.sql', import.meta.url), 'utf8');
   await db.exec(verification);
   const staffVerification = await readFile(new URL('../../supabase/verify_staff_admin.sql', import.meta.url), 'utf8');
@@ -71,7 +77,7 @@ try {
   await db.exec(transactionTests);
   const claimRecoveryTests = await readFile(new URL('../../supabase/tests/member_claim_recovery.sql', import.meta.url), 'utf8');
   await db.exec(claimRecoveryTests);
-  console.log('PASS: identity/claim/recovery + transaction + staff/admin + invitation + operator-provisioned Auth + archive + covers + classroom + inventory-lock migrations; exclusive pending claim, rejection release, same-account resubmission, one-time recovery codes, archive behavior, class loan idempotency/partial/full return, request idempotency, approval, loss resolution, RLS isolation and evidence/cover-object access.');
+  console.log('PASS: migrations and behavior checks including staff approval, pending stock unchanged, duplicate request rejection, direct-borrow access denied, returns, loss, classroom loans and RLS.');
   console.log('GoTrue transport, real Storage API, email delivery and multi-connection concurrency still require Supabase integration tests.');
 } catch (error) {
   console.error(`FAIL: SQLSTATE ${error.code ?? 'unknown'}: ${error.message}`);

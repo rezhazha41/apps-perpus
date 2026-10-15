@@ -27,8 +27,12 @@ Hostname aktif `sup.tunneladguard.xyz` selalu ditolak. Key hanya dibaca dari env
 - signup, konfirmasi, persetujuan, dan login anggota A/B;
 - pemisahan anon, anggota A, anggota B, dan admin melalui RLS;
 - upload/read bukti privat serta penolakan akses lintas anggota;
-- pengajuan pinjaman, persetujuan RPC, dan perubahan status QR buku.
+- peminjaman langsung melalui RPC baru, status aktif, idempotensi, dan perubahan status QR buku.
 - penolakan claim kedua, pelepasan claim setelah penolakan, dan pengajuan ulang akun yang sama;
 - penerbitan serta penukaran kode pemulihan, kegagalan kata sandi lama, keberhasilan kata sandi baru, dan penolakan reuse kode.
 
 Data memakai alamat `example.invalid` dan penanda unik per run. Bukti concurrency dua koneksi tetap berasal dari `scripts/postgres-concurrency/run.ps1`.
+
+## Staff approval flow ? 6 October 2026
+
+Apply migrations through `202610060001_staff_approval_required.sql` in the disposable stack before running. The runner expects direct borrowing to be denied, pending requests to preserve stock, member review to fail, and admin approval to create a staff-approved loan. Previous self-service test results describe the historical flow only. No active-server execution is authorized by this test runner.

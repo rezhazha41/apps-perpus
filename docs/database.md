@@ -1,5 +1,10 @@
 # Database tahap M2
 
+## Keputusan terbaru - 6 Oktober 2026
+
+Peminjaman anggota memerlukan persetujuan pengurus setelah pemeriksaan siswa dan buku fisik. Aplikasi memakai `submit_loan_request`, kemudian pengurus memakai `review_loan_request`. Pengajuan belum mengurangi stok. Migrasi `202610060001_staff_approval_required.sql` menolak pengajuan ganda anggota/QR yang masih pending, memvalidasi jenis bukti, dan mencabut akses klien ke `borrow_books`. Pinjaman lama tidak diubah. Migrasi sudah diterapkan dan diverifikasi pada server aktif setelah backup. Masa kedaluwarsa otomatis belum ditentukan.
+
+
 ## Model identitas dan hak admin
 
 Data identitas siswa dan pengurus dipisahkan. `student_registry` menyimpan siswa yang boleh mendaftar sebagai anggota; `staff_registry` menyimpan pengurus, email, jabatan, status, dan akun Auth tertaut. `profiles` menunjuk ke tepat satu identitas. Pendaftaran pengurus memerlukan email terdaftar dan token undangan satu kali; peran admin tidak dapat dinaikkan dari aplikasi anggota.
@@ -14,7 +19,7 @@ Tindakan **Hapus dari katalog** menggunakan RPC `archive_book` sebagai soft dele
 
 Migrasi `202609280001_identity_inventory.sql` ditujukan untuk database Supabase pengembangan yang kosong. Tabel bawaan `auth.users` dan fungsi `auth.uid()` harus sudah tersedia. Jangan menerapkannya ke database yang dipakai aplikasi lain: trigger pendaftaran ini khusus Perpus.
 
-Migrasi M2 menyediakan registry siswa/staf, profil akun, buku, QR buku, pengaturan, audit, pemeriksaan akses, undangan staf, dan RPC review. Migrasi M3 lokal menambahkan tabel/RPC peminjaman, Storage privat, dan deadline retensi bukti. Migrasi `202609300003_inventory_lock_protocol.sql` menyatukan urutan lock buku lalu QR buku. Migrasi `202610010001_member_claim_recovery.sql` menambahkan claim eksklusif, pengajuan ulang akun yang sama, serta challenge pemulihan akun. Dua migrasi terakhir belum diterapkan ke server aktif. Notifikasi, worker penghapusan, laporan, dan arsip belum tersedia.
+Migrasi M2 menyediakan registry siswa/staf, profil akun, buku, QR buku, pengaturan, audit, pemeriksaan akses, undangan staf, dan RPC review. Migrasi M3 menambahkan tabel/RPC peminjaman, Storage privat, dan deadline retensi bukti. Migrasi `202609300003_inventory_lock_protocol.sql` menyatukan urutan lock buku lalu QR buku. Migrasi `202610010001_member_claim_recovery.sql` menambahkan claim eksklusif, pengajuan ulang akun yang sama, serta challenge pemulihan akun. Migrasi `202610020001_self_service_borrowing.sql` dahulu menambahkan pinjaman langsung. Sejak keputusan 6 Oktober, aplikasi kembali memakai `submit_loan_request`; migrasi `202610060001_staff_approval_required.sql` sudah mencabut akses klien ke `borrow_books` pada server aktif. Notifikasi, worker penghapusan, laporan, dan arsip belum tersedia.
 
 ## Pendaftaran dan aktivasi
 
@@ -32,7 +37,7 @@ Anggota tetap bisa mendaftar memakai NIS/NISN yang telah dimasukkan pengurus. Ad
 
 ## Batas akses
 
-RLS diaktifkan pada seluruh tabel aplikasi. anon tidak mendapat akses tabel; authenticated memperoleh SELECT dengan policy. Perubahan transaksi dan status eksemplar hanya melalui RPC yang mengotorisasi caller. Tidak ada direct-write client untuk tabel transaksi atau delete client; kolom administrasi identitas/inventaris dibatasi grant per kolom dan policy admin. Audit disimpan oleh trigger dan tidak dapat diubah client.
+RLS diaktifkan pada seluruh tabel aplikasi. anon tidak mendapat akses tabel; authenticated memperoleh SELECT dengan policy. Perubahan transaksi dan status eksemplar hanya melalui RPC yang mengotorisasi caller. `borrow_books` memvalidasi bukti Storage, profil aktif, batas dan kewajiban pinjaman, lalu mengunci inventaris serta mencatat bukti/pinjaman/stok dalam satu transaksi. `loans.approval_mode='self_service'` menandai pinjaman langsung dan `approved_by` bernilai null; pinjaman staf lama tetap mencatat pengurus. Tidak ada direct-write client untuk tabel transaksi atau delete client; kolom administrasi identitas/inventaris dibatasi grant per kolom dan policy admin. Audit disimpan oleh trigger dan tidak dapat diubah client.
 
 Pengaturan 7 hari/3 buku masih default pengembangan; `policy_confirmed=false` dan `evidence_retention=null`. Retensi nyata harus dipilih sekolah sebelum unggah foto. Waktu memakai timestamptz; zona waktu sekolah harus diverifikasi sebelum scheduler.
 

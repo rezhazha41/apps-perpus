@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:perpus_ui_kit/perpus_ui_kit.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'profile_identity.dart';
+
+import '../../app/form_validators.dart';
 import '../../app/supabase_config.dart';
 import '../server/server_shell.dart';
 
@@ -84,9 +87,6 @@ class _AuthPageState extends State<AuthPage> {
     super.dispose();
   }
 
-  String? _required(String? value) =>
-      value == null || value.trim().isEmpty ? 'Bagian ini wajib diisi.' : null;
-
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
@@ -146,9 +146,9 @@ class _AuthPageState extends State<AuthPage> {
         if (mounted) Navigator.of(context).pop();
       }
     } on AuthException catch (exception) {
-      if (mounted) setState(() => _error = _authMessage(exception.message));
+      if (mounted) setState(() => _error = authErrorMessage(exception.message));
     } on FormatException catch (exception) {
-      if (mounted) setState(() => _error = _authMessage(exception.message));
+      if (mounted) setState(() => _error = authErrorMessage(exception.message));
     } catch (_) {
       if (mounted) {
         setState(
@@ -221,10 +221,6 @@ class _AuthPageState extends State<AuthPage> {
     return 'Permintaan reset gagal: ${raw.trim()}';
   }
 
-  String _authMessage(String raw) {
-    return authErrorMessage(raw);
-  }
-
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -292,7 +288,7 @@ class _AuthPageState extends State<AuthPage> {
                   if (_signup && widget.expectedRole == 'admin') ...[
                     TextFormField(
                       controller: _staffInvite,
-                      validator: _required,
+                      validator: requiredFieldValidator,
                       textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(
                         labelText: 'Kode undangan pengurus',
@@ -319,7 +315,7 @@ class _AuthPageState extends State<AuthPage> {
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _identity,
-                      validator: _required,
+                      validator: requiredFieldValidator,
                       keyboardType: TextInputType.number,
                       textInputAction: TextInputAction.next,
                       decoration: InputDecoration(
@@ -345,8 +341,7 @@ class _AuthPageState extends State<AuthPage> {
                     textInputAction: TextInputAction.next,
                     autofillHints: const [AutofillHints.email],
                     decoration: const InputDecoration(
-                      labelText: 'Email',
-                      hintText: 'nama@email.com',
+                      labelText: 'Alamat email',
                       prefixIcon: Icon(Icons.mail_outline),
                     ),
                   ),
@@ -532,9 +527,6 @@ class _AccountAccessRecoveryPageState extends State<AccountAccessRecoveryPage> {
     super.dispose();
   }
 
-  String? _required(String? value) =>
-      value == null || value.trim().isEmpty ? 'Bagian ini wajib diisi.' : null;
-
   Future<void> _redeemWithServer({
     required String challengeId,
     required String code,
@@ -629,7 +621,7 @@ class _AccountAccessRecoveryPageState extends State<AccountAccessRecoveryPage> {
                 children: [
                   TextFormField(
                     controller: _challengeId,
-                    validator: _required,
+                    validator: requiredFieldValidator,
                     textInputAction: TextInputAction.next,
                     decoration: const InputDecoration(
                       labelText: 'ID pemulihan',
@@ -683,7 +675,7 @@ class _AccountAccessRecoveryPageState extends State<AccountAccessRecoveryPage> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _confirmation,
-                    validator: _required,
+                    validator: requiredFieldValidator,
                     obscureText: true,
                     textInputAction: TextInputAction.done,
                     decoration: const InputDecoration(
@@ -713,8 +705,17 @@ class _AccountAccessRecoveryPageState extends State<AccountAccessRecoveryPage> {
 }
 
 class AccountPage extends StatefulWidget {
-  const AccountPage({super.key, required this.session});
+  const AccountPage({
+    super.key,
+    required this.session,
+    this.profileLoader,
+    this.onRefresh,
+    this.refreshSession,
+  });
   final Session session;
+  final Future<Map<String, dynamic>?> Function()? profileLoader;
+  final VoidCallback? onRefresh;
+  final Future<void> Function()? refreshSession;
   @override
   State<AccountPage> createState() => _AccountPageState();
 }
@@ -722,17 +723,50 @@ class AccountPage extends StatefulWidget {
 class _AccountPageState extends State<AccountPage> {
   Future<Map<String, dynamic>?>? _profile;
   bool _resubmitting = false;
+  bool _checkingStatus = false;
   @override
   void initState() {
     super.initState();
     _profile = _loadProfile();
   }
 
-  Future<Map<String, dynamic>?> _loadProfile() => Supabase.instance.client
-      .from('profiles')
-      .select('role,status,rejection_reason')
-      .eq('id', widget.session.user.id)
-      .maybeSingle();
+  Future<Map<String, dynamic>?> _loadProfile() =>
+      widget.profileLoader?.call() ??
+      Supabase.instance.client
+          .from('profiles')
+          .select('role,status,rejection_reason')
+          .eq('id', widget.session.user.id)
+          .maybeSingle();
+
+  Future<void> _refreshStatus() async {
+    if (_checkingStatus) return;
+    setState(() => _checkingStatus = true);
+    try {
+      try {
+        final refreshSession = widget.refreshSession;
+        if (refreshSession == null) {
+          await Supabase.instance.client.auth.refreshSession();
+        } else {
+          await refreshSession();
+        }
+      } catch (_) {
+        // Still reload the profile; its result provides the useful status.
+      }
+      if (!mounted) return;
+      final next = _loadProfile();
+      setState(() {
+        _profile = next;
+      });
+      widget.onRefresh?.call();
+      try {
+        await next;
+      } catch (_) {
+        // The FutureBuilder displays the profile loading error and retry.
+      }
+    } finally {
+      if (mounted) setState(() => _checkingStatus = false);
+    }
+  }
 
   Future<void> _signOut() => Supabase.instance.client.auth.signOut();
 
@@ -792,15 +826,10 @@ class _AccountPageState extends State<AccountPage> {
             }
             if (snapshot.hasError) {
               return _status(
-                'Profil belum dapat dimuat. Periksa koneksi dan aturan akses database.',
+                'Profil belum dapat dimuat. Periksa koneksi internet lalu coba lagi.',
                 Icons.cloud_off_outlined,
                 action: TextButton(
-                  onPressed: () {
-                    final next = _loadProfile();
-                    setState(() {
-                      _profile = next;
-                    });
-                  },
+                  onPressed: _checkingStatus ? null : _refreshStatus,
                   child: const Text('Coba lagi'),
                 ),
               );
@@ -848,15 +877,22 @@ class _AccountPageState extends State<AccountPage> {
               role == 'admin'
                   ? Icons.admin_panel_settings_outlined
                   : Icons.verified_user_outlined,
-              detail: 'Login Supabase berhasil. Katalog dan data peminjaman akan muncul setelah layanan server siap.',
+              detail: 'Profil akun aktif, tetapi menu belum berhasil dimuat. Periksa koneksi internet lalu perbarui status akun.',
             );
           },
         ),
         const SizedBox(height: 16),
         OutlinedButton.icon(
-          onPressed: () => Supabase.instance.client.auth.refreshSession(),
-          icon: const Icon(Icons.refresh),
-          label: const Text('Perbarui status akun'),
+          onPressed: _checkingStatus ? null : _refreshStatus,
+          icon: _checkingStatus
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.refresh),
+          label: Text(
+            _checkingStatus ? 'Memeriksa koneksi...' : 'Perbarui status akun',
+          ),
         ),
       ],
     ),
@@ -1149,11 +1185,38 @@ class _ActiveProfileRouterState extends State<_ActiveProfileRouter> {
     _profile = _loadProfile();
   }
 
-  Future<Map<String, dynamic>?> _loadProfile() => Supabase.instance.client
-      .from('profiles')
-      .select('role,status')
-      .eq('id', widget.session.user.id)
-      .maybeSingle();
+  Future<Map<String, dynamic>?> _loadProfile() async {
+    final client = Supabase.instance.client;
+    final profile = await client
+        .from('profiles')
+        .select('role,status,claimed_student_id,staff_id')
+        .eq('id', widget.session.user.id)
+        .maybeSingle();
+    if (profile == null) return null;
+
+    final profileIdentity = ProfileIdentity.fromProfile(profile);
+    String? displayName;
+    if (profileIdentity.registryId != null) {
+      try {
+        final identityRow = await client
+            .from(profileIdentity.registryTable)
+            .select('full_name')
+            .eq('id', profileIdentity.registryId!)
+            .maybeSingle();
+        displayName = identityRow?['full_name'] as String?;
+      } catch (_) {
+        // A display-name lookup must not prevent an otherwise valid session.
+      }
+    }
+    return {...profile, 'display_name': displayName};
+  }
+
+  void _refreshProfile() {
+    final next = _loadProfile();
+    setState(() {
+      _profile = next;
+    });
+  }
 
   @override
   Widget build(BuildContext context) => FutureBuilder<Map<String, dynamic>?>(
@@ -1166,11 +1229,13 @@ class _ActiveProfileRouterState extends State<_ActiveProfileRouter> {
       if (snapshot.hasError ||
           profile == null ||
           profile['status'] != 'active') {
-        return AccountPage(session: widget.session);
+        return AccountPage(session: widget.session, onRefresh: _refreshProfile);
       }
+      final profileIdentity = ProfileIdentity.fromProfile(profile);
       return ServerShell(
         user: widget.session.user,
-        isAdmin: profile['role'] == 'admin',
+        isAdmin: profileIdentity.isAdmin,
+        displayName: profile['display_name'] as String?,
       );
     },
   );
