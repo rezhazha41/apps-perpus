@@ -4690,7 +4690,7 @@ class _ClassLoanCreatePageState extends State<_ClassLoanCreatePage> {
           ),
           if (_globalMode) ...[
             DropdownButtonFormField<String>(
-              value: _globalBookId,
+              initialValue: _globalBookId,
               decoration: const InputDecoration(labelText: 'Judul buku'),
               items: [
                 for (final book in _bookOptions)
